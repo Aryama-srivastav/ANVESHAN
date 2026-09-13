@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, EmailStr, Field
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    full_name: str
+
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class CaseCreate(BaseModel):
+    case_number: str
+    title: str
+    description: str | None = None
+
+
+class CaseOut(BaseModel):
+    id: str
+    case_number: str
+    title: str
+    description: str | None
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentCreate(BaseModel):
+    case_id: str
+    title: str
+    doc_type: str
+    sensitivity_level: str = "restricted"
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
+class DocumentOut(BaseModel):
+    id: str
+    case_id: str
+    title: str
+    doc_type: str
+    sensitivity_level: str
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentVersionCreate(BaseModel):
+    storage_uri: str
+    content_hash: str
+    created_by_user_id: str | None = None
+    notes: str | None = None
+
+
+class DocumentVersionOut(BaseModel):
+    id: str
+    document_id: str
+    version_number: int
+    storage_uri: str
+    content_hash: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AccessGrantCreate(BaseModel):
+    user_id: str
+    case_id: str | None = None
+    document_id: str | None = None
+    purpose: str
+    access_level: str = "read"
+    valid_until: datetime | None = None
+
+
+class AccessGrantOut(BaseModel):
+    id: str
+    user_id: str
+    case_id: str | None
+    document_id: str | None
+    purpose: str
+    access_level: str
+    valid_from: datetime
+    valid_until: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class TagCreate(BaseModel):
+    name: str
+    category: str | None = None
+
+
+class TagOut(BaseModel):
+    id: str
+    name: str
+    category: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class OriginalRecordCreate(BaseModel):
+    source_system: str | None = None
+    source_reference: str | None = None
+    acquired_at: datetime | None = None
+    immutable_hash: str | None = None
+
+
+class IdentityVerificationCreate(BaseModel):
+    user_id: str
+    verification_method: str
+    verifier: str
+    status: str = "pending"
+    verified_at: datetime | None = None
+    notes: str | None = None
+
+
+class ExternalReferenceCreate(BaseModel):
+    case_id: str | None = None
+    document_id: str | None = None
+    source_system: str
+    external_record_id: str
+    record_url: str | None = None
+
+
+class MessageOut(BaseModel):
+    message: str
+    data: dict[str, Any] | None = None
