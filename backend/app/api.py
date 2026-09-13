@@ -11,11 +11,14 @@ from .schemas import (
     CaseCreate,
     CaseOut,
     DocumentCreate,
+    DocumentDetailOut,
     DocumentOut,
     DocumentVersionCreate,
     DocumentVersionOut,
     ExternalReferenceCreate,
     IdentityVerificationCreate,
+    IntegrityVerifyCreate,
+    IntegrityVerifyOut,
     MessageOut,
     OriginalRecordCreate,
     TagCreate,
@@ -72,6 +75,30 @@ def create_document(payload: DocumentCreate, db: Session = Depends(get_db)) -> D
         raise HTTPException(status_code=400, detail="Invalid document payload") from exc
 
 
+@router.get("/documents/{document_id}", response_model=DocumentDetailOut)
+def get_document(document_id: str, db: Session = Depends(get_db)) -> DocumentDetailOut:
+    document = DocumentService.get(db, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return DocumentDetailOut(
+        id=document.id,
+        case_id=document.case_id,
+        title=document.title,
+        doc_type=document.doc_type,
+        sensitivity_level=document.sensitivity_level,
+        status=document.status,
+        metadata={item.meta_key: item.meta_value for item in document.metadata_items},
+        version_count=len(document.versions),
+    )
+
+
+@router.get("/documents/{document_id}/versions", response_model=list[DocumentVersionOut])
+def list_document_versions(document_id: str, db: Session = Depends(get_db)) -> list[DocumentVersionOut]:
+    if DocumentService.get(db, document_id) is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return DocumentService.list_versions(db, document_id)
+
+
 @router.post("/documents/{document_id}/versions", response_model=DocumentVersionOut, status_code=status.HTTP_201_CREATED)
 def create_document_version(
     document_id: str,
@@ -83,6 +110,22 @@ def create_document_version(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to create document version") from exc
+
+
+@router.post(
+    "/documents/{document_id}/versions/{version_id}/verify-integrity",
+    response_model=IntegrityVerifyOut,
+)
+def verify_document_integrity(
+    document_id: str,
+    version_id: str,
+    payload: IntegrityVerifyCreate,
+    db: Session = Depends(get_db),
+) -> IntegrityVerifyOut:
+    result = DocumentService.verify_integrity(db, document_id, version_id, payload)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Document version not found")
+    return result
 
 
 @router.post("/access-grants", response_model=AccessGrantOut, status_code=status.HTTP_201_CREATED)
