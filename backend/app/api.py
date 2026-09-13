@@ -6,6 +6,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .db import get_db
+from .auth import get_current_user
+from .models import User
 from .schemas import (
     AccessGrantCreate,
     AccessGrantOut,
@@ -35,7 +37,7 @@ from .services import (
 )
 from .storage import StorageError, get_storage
 
-router = APIRouter(prefix="/v1", tags=["v1"])
+router = APIRouter(prefix="/v1", tags=["v1"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -53,33 +55,54 @@ def list_users(db: Session = Depends(get_db)) -> list[UserOut]:
 
 
 @router.post("/cases", response_model=CaseOut, status_code=status.HTTP_201_CREATED)
-def create_case(payload: CaseCreate, db: Session = Depends(get_db)) -> CaseOut:
+def create_case(
+    payload: CaseCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CaseOut:
     try:
-        return CaseService.create(db, payload)
+        return CaseService.create(db, payload, current_user.id)
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Case number already exists") from exc
 
 
 @router.get("/cases", response_model=list[CaseOut])
-def list_cases(db: Session = Depends(get_db)) -> list[CaseOut]:
-    return CaseService.list(db)
+def list_cases(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+) -> list[CaseOut]:
+    return CaseService.list_for_user(db, current_user.id)
 
 
 @router.post("/documents", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
-def create_document(payload: DocumentCreate, db: Session = Depends(get_db)) -> DocumentOut:
+def create_document(
+    payload: DocumentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DocumentOut:
     try:
+        AccessService.require_case_access(db, current_user.id, payload.case_id, "write")
         return DocumentService.create(db, payload)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Invalid document payload") from exc
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetailOut)
-def get_document(document_id: str, db: Session = Depends(get_db)) -> DocumentDetailOut:
+def get_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DocumentDetailOut:
     document = DocumentService.get(db, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        AccessService.require_document_access(db, current_user.id, document)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return DocumentDetailOut(
         id=document.id,
         case_id=document.case_id,
@@ -93,9 +116,18 @@ def get_document(document_id: str, db: Session = Depends(get_db)) -> DocumentDet
 
 
 @router.get("/documents/{document_id}/versions", response_model=list[DocumentVersionOut])
-def list_document_versions(document_id: str, db: Session = Depends(get_db)) -> list[DocumentVersionOut]:
-    if DocumentService.get(db, document_id) is None:
+def list_document_versions(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[DocumentVersionOut]:
+    document = DocumentService.get(db, document_id)
+    if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        AccessService.require_document_access(db, current_user.id, document)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return DocumentService.list_versions(db, document_id)
 
 
@@ -110,8 +142,13 @@ def upload_document_version(
     created_by_user_id: str | None = Form(default=None),
     notes: str | None = Form(default=None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> DocumentVersionOut:
     try:
+        document = DocumentService.get(db, document_id)
+        if document is None:
+            raise LookupError("Document not found")
+        AccessService.require_document_access(db, current_user.id, document, "write")
         return DocumentService.upload_version(
             db,
             document_id,
@@ -123,6 +160,8 @@ def upload_document_version(
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except StorageError as exc:
@@ -140,11 +179,18 @@ def verify_document_integrity(
     document_id: str,
     version_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> IntegrityVerifyOut:
     try:
+        document = DocumentService.get(db, document_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        AccessService.require_document_access(db, current_user.id, document)
         result = DocumentService.verify_integrity(db, document_id, version_id, get_storage())
     except LookupError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except StorageError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if result is None:
@@ -157,7 +203,15 @@ def download_document_version(
     document_id: str,
     version_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
+    document = DocumentService.get(db, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        AccessService.require_document_access(db, current_user.id, document)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     version = DocumentService.get_version(db, document_id, version_id)
     if version is None:
         raise HTTPException(status_code=404, detail="Document version not found")
@@ -171,11 +225,24 @@ def download_document_version(
 
 
 @router.post("/access-grants", response_model=AccessGrantOut, status_code=status.HTTP_201_CREATED)
-def grant_access(payload: AccessGrantCreate, db: Session = Depends(get_db)) -> AccessGrantOut:
+def grant_access(
+    payload: AccessGrantCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AccessGrantOut:
     if not payload.case_id and not payload.document_id:
         raise HTTPException(status_code=400, detail="Either case_id or document_id is required")
     try:
+        if payload.document_id:
+            document = DocumentService.get(db, payload.document_id)
+            if document is None:
+                raise HTTPException(status_code=404, detail="Document not found")
+            AccessService.require_document_access(db, current_user.id, document, "admin")
+        else:
+            AccessService.require_case_access(db, current_user.id, payload.case_id, "admin")
         return AccessService.grant(db, payload)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to create access grant") from exc
@@ -191,10 +258,21 @@ def create_tag(payload: TagCreate, db: Session = Depends(get_db)) -> TagOut:
 
 
 @router.post("/documents/{document_id}/tags/{tag_id}", response_model=MessageOut)
-def add_tag_to_document(document_id: str, tag_id: str, db: Session = Depends(get_db)) -> MessageOut:
+def add_tag_to_document(
+    document_id: str,
+    tag_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageOut:
     try:
+        document = DocumentService.get(db, document_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        AccessService.require_document_access(db, current_user.id, document, "write")
         ClassificationService.link_tag(db, document_id, tag_id)
         return MessageOut(message="Tag linked to document", data={"document_id": document_id, "tag_id": tag_id})
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to link tag") from exc
@@ -205,10 +283,17 @@ def attach_original_record(
     document_id: str,
     payload: OriginalRecordCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> MessageOut:
     try:
+        document = DocumentService.get(db, document_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        AccessService.require_document_access(db, current_user.id, document, "write")
         record = RecordService.attach_original_record(db, document_id, payload)
         return MessageOut(message="Original record saved", data={"id": record.id, "document_id": document_id})
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to attach original record") from exc
@@ -228,12 +313,25 @@ def create_identity_verification(
 
 
 @router.post("/external-records", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
-def create_external_reference(payload: ExternalReferenceCreate, db: Session = Depends(get_db)) -> MessageOut:
+def create_external_reference(
+    payload: ExternalReferenceCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageOut:
     if not payload.case_id and not payload.document_id:
         raise HTTPException(status_code=400, detail="Either case_id or document_id is required")
     try:
+        if payload.document_id:
+            document = DocumentService.get(db, payload.document_id)
+            if document is None:
+                raise HTTPException(status_code=404, detail="Document not found")
+            AccessService.require_document_access(db, current_user.id, document, "write")
+        else:
+            AccessService.require_case_access(db, current_user.id, payload.case_id, "write")
         record = RecordService.create_external_reference(db, payload)
         return MessageOut(message="External reference saved", data={"id": record.id})
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to save external reference") from exc

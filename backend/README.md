@@ -22,6 +22,18 @@ The default local database is `sqlite:///./anveshan.db`. Set `DATABASE_URL` to u
 
 The API is available at `http://127.0.0.1:8000`; interactive documentation is at `/docs`.
 
+## Authentication and authorization
+
+All `/v1` routes require a bearer JWT. In the planned Supabase setup, Supabase Auth issues the token and the backend validates it with `JWT_SECRET`; the backend remains the authority for case and document access. The token `sub` claim must match an active local `users.id` record.
+
+New case creators receive an `admin` access grant for that case. Case administrators can grant access to other users. Evidence reads require `read` access; uploads and metadata/reference changes require `write` access; access-grant management requires `admin` access.
+
+```powershell
+curl.exe http://127.0.0.1:8000/v1/cases -H "Authorization: Bearer <supabase-jwt>"
+```
+
+Authentication is intentionally validated by the API rather than trusted from frontend state. MFA remains the responsibility of the configured identity provider and must be enabled in Supabase before production use.
+
 ## Evidence upload
 
 Upload evidence as multipart form data:
@@ -47,4 +59,4 @@ Local development uses `OBJECT_STORAGE_PROVIDER=local` and stores files under `O
 
 ## Current security boundary
 
-Authentication, MFA, and case/document authorization are not implemented yet. The content and verification endpoints must therefore be treated as development-only until the authentication and authorization layer is added. Local files are also not encrypted at rest yet; use an encrypted host volume for development and add application/storage encryption before handling sensitive data.
+JWT authentication and case/document grant enforcement are implemented. Provider MFA, full RBAC/ABAC policy coverage, and PostgreSQL RLS are still required before production use. Local files are also not encrypted at rest yet; use an encrypted host volume for development and add application/storage encryption before handling sensitive data.
