@@ -42,6 +42,19 @@ class CaseService:
 
 class DocumentService:
     @staticmethod
+    def get(db: Session, document_id: str) -> models.Document | None:
+        return db.get(models.Document, document_id)
+
+    @staticmethod
+    def list_versions(db: Session, document_id: str) -> list[models.DocumentVersion]:
+        stmt: Select[tuple[models.DocumentVersion]] = (
+            select(models.DocumentVersion)
+            .where(models.DocumentVersion.document_id == document_id)
+            .order_by(models.DocumentVersion.version_number.asc())
+        )
+        return list(db.scalars(stmt))
+
+    @staticmethod
     def create(db: Session, payload: schemas.DocumentCreate) -> models.Document:
         document = models.Document(
             case_id=payload.case_id,
@@ -79,6 +92,28 @@ class DocumentService:
         db.commit()
         db.refresh(version)
         return version
+
+    @staticmethod
+    def verify_integrity(
+        db: Session,
+        document_id: str,
+        version_id: str,
+        payload: schemas.IntegrityVerifyCreate,
+    ) -> schemas.IntegrityVerifyOut | None:
+        version = db.get(models.DocumentVersion, version_id)
+        if version is None or version.document_id != document_id:
+            return None
+
+        expected_hash = version.content_hash.lower()
+        observed_hash = payload.observed_hash.lower()
+        return schemas.IntegrityVerifyOut(
+            document_id=document_id,
+            version_id=version.id,
+            version_number=version.version_number,
+            expected_hash=expected_hash,
+            observed_hash=observed_hash,
+            verified=expected_hash == observed_hash,
+        )
 
 
 class AccessService:
