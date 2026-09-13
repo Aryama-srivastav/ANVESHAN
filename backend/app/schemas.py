@@ -60,13 +60,6 @@ class DocumentDetailOut(DocumentOut):
     version_count: int
 
 
-class DocumentVersionCreate(BaseModel):
-    storage_uri: str
-    content_hash: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
-    created_by_user_id: str | None = None
-    notes: str | None = None
-
-
 class DocumentVersionOut(BaseModel):
     id: str
     document_id: str
@@ -76,10 +69,6 @@ class DocumentVersionOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
-
-
-class IntegrityVerifyCreate(BaseModel):
-    observed_hash: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
 
 
 class IntegrityVerifyOut(BaseModel):
