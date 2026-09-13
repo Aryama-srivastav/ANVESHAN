@@ -55,9 +55,14 @@ class DocumentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DocumentDetailOut(DocumentOut):
+    metadata: dict[str, str]
+    version_count: int
+
+
 class DocumentVersionCreate(BaseModel):
     storage_uri: str
-    content_hash: str
+    content_hash: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
     created_by_user_id: str | None = None
     notes: str | None = None
 
@@ -71,6 +76,19 @@ class DocumentVersionOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class IntegrityVerifyCreate(BaseModel):
+    observed_hash: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
+
+
+class IntegrityVerifyOut(BaseModel):
+    document_id: str
+    version_id: str
+    version_number: int
+    expected_hash: str
+    observed_hash: str
+    verified: bool
 
 
 class AccessGrantCreate(BaseModel):
