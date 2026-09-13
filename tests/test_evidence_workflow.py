@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+import jwt
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -15,16 +17,28 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "backend"))
 
 from app.db import get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Base  # noqa: E402
+from app.models import Base, User  # noqa: E402
 
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
     monkeypatch.setenv("OBJECT_STORAGE_PROVIDER", "local")
     monkeypatch.setenv("OBJECT_STORAGE_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-bytes-long")
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}", future=True)
     testing_session = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)
     Base.metadata.create_all(bind=engine)
+    seed_session = testing_session()
+    actor = User(email="investigator@example.test", full_name="Synthetic Investigator")
+    seed_session.add(actor)
+    seed_session.commit()
+    seed_session.refresh(actor)
+    token = jwt.encode(
+        {"sub": actor.id, "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        "test-secret-key-that-is-at-least-32-bytes-long",
+        algorithm="HS256",
+    )
+    seed_session.close()
 
     def override_get_db() -> Generator[Session, None, None]:
         db = testing_session()
@@ -35,6 +49,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestCli
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
+        test_client.headers.update({"Authorization": f"Bearer {token}"})
+        test_client.actor_id = actor.id
+        test_client.testing_session = testing_session
         yield test_client
     app.dependency_overrides.clear()
     engine.dispose()
@@ -143,3 +160,38 @@ def test_upload_calculates_hash_and_stores_bytes(client: TestClient) -> None:
 
     detail = client.get(f"/v1/documents/{document_id}").json()
     assert detail["version_count"] == 1
+
+
+def test_unauthenticated_and_unauthorized_access_is_rejected(client: TestClient) -> None:
+    unauthenticated = TestClient(app)
+    response = unauthenticated.get("/v1/cases")
+    assert response.status_code == 401
+
+    case_response = client.post(
+        "/v1/cases",
+        json={"case_number": "CASE-AUTH", "title": "Authorization test"},
+    )
+    case_id = case_response.json()["id"]
+    document_response = client.post(
+        "/v1/documents",
+        json={"case_id": case_id, "title": "Restricted evidence", "doc_type": "text"},
+    )
+    document_id = document_response.json()["id"]
+
+    db = client.testing_session()
+    outsider = User(email="outsider@example.test", full_name="Unauthorized User")
+    db.add(outsider)
+    db.commit()
+    db.refresh(outsider)
+    outsider_token = jwt.encode(
+        {"sub": outsider.id, "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        "test-secret-key-that-is-at-least-32-bytes-long",
+        algorithm="HS256",
+    )
+    db.close()
+
+    response = client.get(
+        f"/v1/documents/{document_id}",
+        headers={"Authorization": f"Bearer {outsider_token}"},
+    )
+    assert response.status_code == 403

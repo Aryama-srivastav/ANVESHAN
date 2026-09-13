@@ -5,7 +5,9 @@ import os
 from typing import BinaryIO
 from uuid import uuid4
 
-from sqlalchemy import Select, select
+from datetime import datetime, timezone
+
+from sqlalchemy import Select, exists, select
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -46,13 +48,22 @@ class UserService:
 
 class CaseService:
     @staticmethod
-    def create(db: Session, payload: schemas.CaseCreate) -> models.Case:
+    def create(db: Session, payload: schemas.CaseCreate, actor_id: str) -> models.Case:
         case = models.Case(
             case_number=payload.case_number,
             title=payload.title,
             description=payload.description,
         )
         db.add(case)
+        db.flush()
+        db.add(
+            models.AuthorizedAccess(
+                user_id=actor_id,
+                case_id=case.id,
+                purpose="case creation",
+                access_level="admin",
+            )
+        )
         db.commit()
         db.refresh(case)
         return case
@@ -61,6 +72,18 @@ class CaseService:
     def list(db: Session) -> list[models.Case]:
         stmt: Select[tuple[models.Case]] = select(models.Case).order_by(models.Case.created_at.desc())
         return list(db.scalars(stmt))
+
+    @staticmethod
+    def list_for_user(db: Session, user_id: str) -> list[models.Case]:
+        if AccessService._is_admin(db, user_id):
+            return CaseService.list(db)
+        stmt: Select[tuple[models.Case]] = (
+            select(models.Case)
+            .join(models.AuthorizedAccess, models.AuthorizedAccess.case_id == models.Case.id)
+            .where(models.AuthorizedAccess.user_id == user_id)
+            .order_by(models.Case.created_at.desc())
+        )
+        return list(db.scalars(stmt).unique())
 
 
 class DocumentService:
@@ -95,7 +118,6 @@ class DocumentService:
         db.refresh(document)
         return document
 
-    @staticmethod
     @staticmethod
     def upload_version(
         db: Session,
@@ -189,6 +211,69 @@ class DocumentService:
 
 
 class AccessService:
+    @staticmethod
+    def require_case_access(db: Session, user_id: str, case_id: str, required_level: str = "read") -> None:
+        if AccessService._is_admin(db, user_id):
+            return
+        if not AccessService._has_grant(db, user_id, case_id=case_id, required_level=required_level):
+            raise PermissionError("User is not authorized for this case")
+
+    @staticmethod
+    def require_document_access(
+        db: Session, user_id: str, document: models.Document, required_level: str = "read"
+    ) -> None:
+        if AccessService._is_admin(db, user_id):
+            return
+        if AccessService._has_grant(db, user_id, document_id=document.id, required_level=required_level):
+            return
+        if AccessService._has_grant(db, user_id, case_id=document.case_id, required_level=required_level):
+            return
+        raise PermissionError("User is not authorized for this document")
+
+    @staticmethod
+    def _is_admin(db: Session, user_id: str) -> bool:
+        return bool(
+            db.scalar(
+                select(
+                    exists().where(
+                        models.UserRole.user_id == user_id,
+                        models.UserRole.role_id == models.Role.id,
+                        models.Role.name == "admin",
+                    )
+                )
+            )
+        )
+
+    @staticmethod
+    def _has_grant(
+        db: Session,
+        user_id: str,
+        *,
+        case_id: str | None = None,
+        document_id: str | None = None,
+        required_level: str,
+    ) -> bool:
+        levels = {"read": 1, "write": 2, "admin": 3}
+        minimum = levels[required_level]
+        now = datetime.now(timezone.utc)
+        grants = db.scalars(
+            select(models.AuthorizedAccess).where(
+                models.AuthorizedAccess.user_id == user_id,
+                models.AuthorizedAccess.case_id == case_id if case_id is not None else True,
+                models.AuthorizedAccess.document_id == document_id if document_id is not None else True,
+            )
+        )
+        for grant in grants:
+            valid_from = grant.valid_from.replace(tzinfo=timezone.utc) if grant.valid_from.tzinfo is None else grant.valid_from
+            valid_until = grant.valid_until
+            if valid_until is not None and valid_until.tzinfo is None:
+                valid_until = valid_until.replace(tzinfo=timezone.utc)
+            if levels.get(grant.access_level, 0) >= minimum and valid_from <= now and (
+                valid_until is None or now <= valid_until
+            ):
+                return True
+        return False
+
     @staticmethod
     def grant(db: Session, payload: schemas.AccessGrantCreate) -> models.AuthorizedAccess:
         grant = models.AuthorizedAccess(**payload.model_dump())
