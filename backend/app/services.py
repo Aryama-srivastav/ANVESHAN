@@ -1,9 +1,32 @@
 from __future__ import annotations
 
+import hashlib
+import os
+from typing import BinaryIO
+from uuid import uuid4
+
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from . import models, schemas
+from .storage import StorageProvider
+
+
+class _HashingReader:
+    def __init__(self, source: BinaryIO, maximum_bytes: int) -> None:
+        self.source = source
+        self.maximum_bytes = maximum_bytes
+        self.hasher = hashlib.sha256()
+        self.size = 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self.source.read(size)
+        if chunk:
+            self.size += len(chunk)
+            if self.size > self.maximum_bytes:
+                raise ValueError("Uploaded file exceeds the configured size limit")
+            self.hasher.update(chunk)
+        return chunk
 
 
 class UserService:
@@ -73,39 +96,81 @@ class DocumentService:
         return document
 
     @staticmethod
-    def add_version(db: Session, document_id: str, payload: schemas.DocumentVersionCreate) -> models.DocumentVersion:
+    @staticmethod
+    def upload_version(
+        db: Session,
+        document_id: str,
+        source: BinaryIO,
+        content_type: str | None,
+        storage: StorageProvider,
+        created_by_user_id: str | None = None,
+        notes: str | None = None,
+    ) -> models.DocumentVersion:
+        document = db.get(models.Document, document_id)
+        if document is None:
+            raise LookupError("Document not found")
+
         latest_number = db.scalar(
             select(models.DocumentVersion.version_number)
             .where(models.DocumentVersion.document_id == document_id)
             .order_by(models.DocumentVersion.version_number.desc())
             .limit(1)
         )
-        version = models.DocumentVersion(
-            document_id=document_id,
-            version_number=(latest_number or 0) + 1,
-            storage_uri=payload.storage_uri,
-            content_hash=payload.content_hash,
-            created_by_user_id=payload.created_by_user_id,
-            notes=payload.notes,
-        )
-        db.add(version)
-        db.commit()
-        db.refresh(version)
-        return version
+        version_number = (latest_number or 0) + 1
+        key = f"cases/{document.case_id}/documents/{document_id}/versions/{uuid4()}"
+        reader = _HashingReader(source, int(os.getenv("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024))))
+        storage_uri: str | None = None
+        try:
+            storage_uri = storage.put(key, reader, content_type)
+            if reader.size == 0:
+                raise ValueError("Uploaded file is empty")
+            version = models.DocumentVersion(
+                document_id=document_id,
+                version_number=version_number,
+                storage_uri=storage_uri,
+                content_hash=reader.hasher.hexdigest(),
+                created_by_user_id=created_by_user_id,
+                notes=notes,
+            )
+            db.add(version)
+            if version_number == 1:
+                db.add(
+                    models.OriginalDocumentRecord(
+                        document_id=document_id,
+                        source_system="anveshan-upload",
+                        source_reference=storage_uri,
+                        immutable_hash=version.content_hash,
+                    )
+                )
+            db.commit()
+            db.refresh(version)
+            return version
+        except Exception:
+            db.rollback()
+            if storage_uri is not None:
+                storage.delete(storage_uri)
+            raise
 
     @staticmethod
     def verify_integrity(
         db: Session,
         document_id: str,
         version_id: str,
-        payload: schemas.IntegrityVerifyCreate,
+        storage: StorageProvider,
     ) -> schemas.IntegrityVerifyOut | None:
         version = db.get(models.DocumentVersion, version_id)
         if version is None or version.document_id != document_id:
             return None
 
         expected_hash = version.content_hash.lower()
-        observed_hash = payload.observed_hash.lower()
+        hasher = hashlib.sha256()
+        try:
+            with storage.open(version.storage_uri) as source:
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    hasher.update(chunk)
+        except FileNotFoundError as exc:
+            raise LookupError("Stored evidence was not found") from exc
+        observed_hash = hasher.hexdigest()
         return schemas.IntegrityVerifyOut(
             document_id=document_id,
             version_id=version.id,
@@ -114,6 +179,13 @@ class DocumentService:
             observed_hash=observed_hash,
             verified=expected_hash == observed_hash,
         )
+
+    @staticmethod
+    def get_version(db: Session, document_id: str, version_id: str) -> models.DocumentVersion | None:
+        version = db.get(models.DocumentVersion, version_id)
+        if version is None or version.document_id != document_id:
+            return None
+        return version
 
 
 class AccessService:

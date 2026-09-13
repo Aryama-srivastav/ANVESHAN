@@ -61,3 +61,11 @@ Technology adapters should stay behind service boundaries so the API does not de
 - Use synthetic or anonymized data in development and tests.
 - Make authorization purpose-bound and case-aware.
 - Preserve enough provenance to trace a derived artifact back to its source.
+
+## Current limitations
+
+- Authentication, MFA, RBAC, ABAC, and PostgreSQL RLS are not active yet.
+- Evidence retrieval is implemented for development, but must be placed behind authenticated, case-aware authorization before production use.
+- Local storage is private to the backend process but is not application-encrypted at rest.
+- Supabase Storage integration is configuration-ready but requires a real private bucket integration test.
+- Database migrations are not set up; the current local bootstrap uses SQLAlchemy table creation.

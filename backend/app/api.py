@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,11 +14,9 @@ from .schemas import (
     DocumentCreate,
     DocumentDetailOut,
     DocumentOut,
-    DocumentVersionCreate,
     DocumentVersionOut,
     ExternalReferenceCreate,
     IdentityVerificationCreate,
-    IntegrityVerifyCreate,
     IntegrityVerifyOut,
     MessageOut,
     OriginalRecordCreate,
@@ -34,6 +33,7 @@ from .services import (
     RecordService,
     UserService,
 )
+from .storage import StorageError, get_storage
 
 router = APIRouter(prefix="/v1", tags=["v1"])
 
@@ -99,17 +99,37 @@ def list_document_versions(document_id: str, db: Session = Depends(get_db)) -> l
     return DocumentService.list_versions(db, document_id)
 
 
-@router.post("/documents/{document_id}/versions", response_model=DocumentVersionOut, status_code=status.HTTP_201_CREATED)
-def create_document_version(
+@router.post(
+    "/documents/{document_id}/upload",
+    response_model=DocumentVersionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_document_version(
     document_id: str,
-    payload: DocumentVersionCreate,
+    file: UploadFile = File(...),
+    created_by_user_id: str | None = Form(default=None),
+    notes: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ) -> DocumentVersionOut:
     try:
-        return DocumentService.add_version(db, document_id, payload)
+        return DocumentService.upload_version(
+            db,
+            document_id,
+            file.file,
+            file.content_type,
+            get_storage(),
+            created_by_user_id,
+            notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except StorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=400, detail="Unable to create document version") from exc
+        raise HTTPException(status_code=400, detail="Unable to persist uploaded evidence") from exc
 
 
 @router.post(
@@ -119,13 +139,35 @@ def create_document_version(
 def verify_document_integrity(
     document_id: str,
     version_id: str,
-    payload: IntegrityVerifyCreate,
     db: Session = Depends(get_db),
 ) -> IntegrityVerifyOut:
-    result = DocumentService.verify_integrity(db, document_id, version_id, payload)
+    try:
+        result = DocumentService.verify_integrity(db, document_id, version_id, get_storage())
+    except LookupError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except StorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="Document version not found")
     return result
+
+
+@router.get("/documents/{document_id}/versions/{version_id}/content")
+def download_document_version(
+    document_id: str,
+    version_id: str,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    version = DocumentService.get_version(db, document_id, version_id)
+    if version is None:
+        raise HTTPException(status_code=404, detail="Document version not found")
+    try:
+        content = get_storage().open(version.storage_uri)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=410, detail="Stored evidence was not found") from exc
+    except StorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return StreamingResponse(content, media_type="application/octet-stream")
 
 
 @router.post("/access-grants", response_model=AccessGrantOut, status_code=status.HTTP_201_CREATED)
