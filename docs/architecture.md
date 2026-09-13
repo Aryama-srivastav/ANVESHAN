@@ -61,3 +61,15 @@ Technology adapters should stay behind service boundaries so the API does not de
 - Use synthetic or anonymized data in development and tests.
 - Make authorization purpose-bound and case-aware.
 - Preserve enough provenance to trace a derived artifact back to its source.
+
+## Current limitations
+
+- JWT authentication and grant checks are active; provider MFA, full RBAC/ABAC policy coverage, and PostgreSQL RLS are not active yet.
+- Evidence retrieval is implemented for development, but must be placed behind authenticated, case-aware authorization before production use.
+- Local storage is private to the backend process but is not application-encrypted at rest.
+- Supabase Storage integration is configuration-ready but requires a real private bucket integration test.
+- Database migrations are not set up; the current local bootstrap uses SQLAlchemy table creation.
+
+## Authentication contract
+
+The V1 API expects a bearer JWT from the configured identity provider. The `sub` claim maps to an active local user. The backend evaluates case and document grants for every sensitive operation; frontend visibility is not an authorization mechanism. Supabase Auth is the planned provider, with MFA enabled at the provider boundary.

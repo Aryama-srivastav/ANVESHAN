@@ -1,9 +1,34 @@
 from __future__ import annotations
 
-from sqlalchemy import Select, select
+import hashlib
+import os
+from typing import BinaryIO
+from uuid import uuid4
+
+from datetime import datetime, timezone
+
+from sqlalchemy import Select, exists, select
 from sqlalchemy.orm import Session
 
 from . import models, schemas
+from .storage import StorageProvider
+
+
+class _HashingReader:
+    def __init__(self, source: BinaryIO, maximum_bytes: int) -> None:
+        self.source = source
+        self.maximum_bytes = maximum_bytes
+        self.hasher = hashlib.sha256()
+        self.size = 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self.source.read(size)
+        if chunk:
+            self.size += len(chunk)
+            if self.size > self.maximum_bytes:
+                raise ValueError("Uploaded file exceeds the configured size limit")
+            self.hasher.update(chunk)
+        return chunk
 
 
 class UserService:
@@ -23,13 +48,22 @@ class UserService:
 
 class CaseService:
     @staticmethod
-    def create(db: Session, payload: schemas.CaseCreate) -> models.Case:
+    def create(db: Session, payload: schemas.CaseCreate, actor_id: str) -> models.Case:
         case = models.Case(
             case_number=payload.case_number,
             title=payload.title,
             description=payload.description,
         )
         db.add(case)
+        db.flush()
+        db.add(
+            models.AuthorizedAccess(
+                user_id=actor_id,
+                case_id=case.id,
+                purpose="case creation",
+                access_level="admin",
+            )
+        )
         db.commit()
         db.refresh(case)
         return case
@@ -38,6 +72,18 @@ class CaseService:
     def list(db: Session) -> list[models.Case]:
         stmt: Select[tuple[models.Case]] = select(models.Case).order_by(models.Case.created_at.desc())
         return list(db.scalars(stmt))
+
+    @staticmethod
+    def list_for_user(db: Session, user_id: str) -> list[models.Case]:
+        if AccessService._is_admin(db, user_id):
+            return CaseService.list(db)
+        stmt: Select[tuple[models.Case]] = (
+            select(models.Case)
+            .join(models.AuthorizedAccess, models.AuthorizedAccess.case_id == models.Case.id)
+            .where(models.AuthorizedAccess.user_id == user_id)
+            .order_by(models.Case.created_at.desc())
+        )
+        return list(db.scalars(stmt).unique())
 
 
 class DocumentService:
@@ -73,39 +119,80 @@ class DocumentService:
         return document
 
     @staticmethod
-    def add_version(db: Session, document_id: str, payload: schemas.DocumentVersionCreate) -> models.DocumentVersion:
+    def upload_version(
+        db: Session,
+        document_id: str,
+        source: BinaryIO,
+        content_type: str | None,
+        storage: StorageProvider,
+        created_by_user_id: str | None = None,
+        notes: str | None = None,
+    ) -> models.DocumentVersion:
+        document = db.get(models.Document, document_id)
+        if document is None:
+            raise LookupError("Document not found")
+
         latest_number = db.scalar(
             select(models.DocumentVersion.version_number)
             .where(models.DocumentVersion.document_id == document_id)
             .order_by(models.DocumentVersion.version_number.desc())
             .limit(1)
         )
-        version = models.DocumentVersion(
-            document_id=document_id,
-            version_number=(latest_number or 0) + 1,
-            storage_uri=payload.storage_uri,
-            content_hash=payload.content_hash,
-            created_by_user_id=payload.created_by_user_id,
-            notes=payload.notes,
-        )
-        db.add(version)
-        db.commit()
-        db.refresh(version)
-        return version
+        version_number = (latest_number or 0) + 1
+        key = f"cases/{document.case_id}/documents/{document_id}/versions/{uuid4()}"
+        reader = _HashingReader(source, int(os.getenv("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024))))
+        storage_uri: str | None = None
+        try:
+            storage_uri = storage.put(key, reader, content_type)
+            if reader.size == 0:
+                raise ValueError("Uploaded file is empty")
+            version = models.DocumentVersion(
+                document_id=document_id,
+                version_number=version_number,
+                storage_uri=storage_uri,
+                content_hash=reader.hasher.hexdigest(),
+                created_by_user_id=created_by_user_id,
+                notes=notes,
+            )
+            db.add(version)
+            if version_number == 1:
+                db.add(
+                    models.OriginalDocumentRecord(
+                        document_id=document_id,
+                        source_system="anveshan-upload",
+                        source_reference=storage_uri,
+                        immutable_hash=version.content_hash,
+                    )
+                )
+            db.commit()
+            db.refresh(version)
+            return version
+        except Exception:
+            db.rollback()
+            if storage_uri is not None:
+                storage.delete(storage_uri)
+            raise
 
     @staticmethod
     def verify_integrity(
         db: Session,
         document_id: str,
         version_id: str,
-        payload: schemas.IntegrityVerifyCreate,
+        storage: StorageProvider,
     ) -> schemas.IntegrityVerifyOut | None:
         version = db.get(models.DocumentVersion, version_id)
         if version is None or version.document_id != document_id:
             return None
 
         expected_hash = version.content_hash.lower()
-        observed_hash = payload.observed_hash.lower()
+        hasher = hashlib.sha256()
+        try:
+            with storage.open(version.storage_uri) as source:
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    hasher.update(chunk)
+        except FileNotFoundError as exc:
+            raise LookupError("Stored evidence was not found") from exc
+        observed_hash = hasher.hexdigest()
         return schemas.IntegrityVerifyOut(
             document_id=document_id,
             version_id=version.id,
@@ -115,8 +202,78 @@ class DocumentService:
             verified=expected_hash == observed_hash,
         )
 
+    @staticmethod
+    def get_version(db: Session, document_id: str, version_id: str) -> models.DocumentVersion | None:
+        version = db.get(models.DocumentVersion, version_id)
+        if version is None or version.document_id != document_id:
+            return None
+        return version
+
 
 class AccessService:
+    @staticmethod
+    def require_case_access(db: Session, user_id: str, case_id: str, required_level: str = "read") -> None:
+        if AccessService._is_admin(db, user_id):
+            return
+        if not AccessService._has_grant(db, user_id, case_id=case_id, required_level=required_level):
+            raise PermissionError("User is not authorized for this case")
+
+    @staticmethod
+    def require_document_access(
+        db: Session, user_id: str, document: models.Document, required_level: str = "read"
+    ) -> None:
+        if AccessService._is_admin(db, user_id):
+            return
+        if AccessService._has_grant(db, user_id, document_id=document.id, required_level=required_level):
+            return
+        if AccessService._has_grant(db, user_id, case_id=document.case_id, required_level=required_level):
+            return
+        raise PermissionError("User is not authorized for this document")
+
+    @staticmethod
+    def _is_admin(db: Session, user_id: str) -> bool:
+        return bool(
+            db.scalar(
+                select(
+                    exists().where(
+                        models.UserRole.user_id == user_id,
+                        models.UserRole.role_id == models.Role.id,
+                        models.Role.name == "admin",
+                    )
+                )
+            )
+        )
+
+    @staticmethod
+    def _has_grant(
+        db: Session,
+        user_id: str,
+        *,
+        case_id: str | None = None,
+        document_id: str | None = None,
+        required_level: str,
+    ) -> bool:
+        levels = {"read": 1, "write": 2, "admin": 3}
+        minimum = levels[required_level]
+        now = datetime.now(timezone.utc)
+        grants = db.scalars(
+            select(models.AuthorizedAccess).where(
+                models.AuthorizedAccess.user_id == user_id,
+                models.AuthorizedAccess.case_id == case_id if case_id is not None else True,
+                models.AuthorizedAccess.document_id == document_id if document_id is not None else True,
+            )
+        )
+        for grant in grants:
+            valid_from = grant.valid_from.replace(tzinfo=timezone.utc) if grant.valid_from.tzinfo is None else grant.valid_from
+            valid_until = grant.valid_until
+            if valid_until is not None and valid_until.tzinfo is None:
+                valid_until = valid_until.replace(tzinfo=timezone.utc)
+            if levels.get(grant.access_level, 0) >= minimum and valid_from <= now and (
+                valid_until is None or now <= valid_until
+            ):
+                return True
+        return False
+
     @staticmethod
     def grant(db: Session, payload: schemas.AccessGrantCreate) -> models.AuthorizedAccess:
         grant = models.AuthorizedAccess(**payload.model_dump())

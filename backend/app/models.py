@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -23,6 +23,10 @@ def _uuid() -> str:
     return str(uuid4())
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class Role(Base):
     __tablename__ = "roles"
 
@@ -40,7 +44,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
     roles: Mapped[list[UserRole]] = relationship(back_populates="user", cascade="all, delete-orphan")
     identity_verifications: Mapped[list[IdentityVerificationRecord]] = relationship(
@@ -56,7 +60,7 @@ class UserRole(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     role_id: Mapped[str] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), index=True)
-    granted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    granted_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
     user: Mapped[User] = relationship(back_populates="roles")
     role: Mapped[Role] = relationship(back_populates="user_roles")
@@ -70,7 +74,7 @@ class Case(Base):
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="open")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
     documents: Mapped[list[Document]] = relationship(back_populates="case", cascade="all, delete-orphan")
     access_grants: Mapped[list[AuthorizedAccess]] = relationship(back_populates="case")
@@ -89,7 +93,7 @@ class Document(Base):
     sensitivity_level: Mapped[str] = mapped_column(String(30), default="restricted")
     status: Mapped[str] = mapped_column(String(30), default="active")
     created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
     case: Mapped[Case] = relationship(back_populates="documents")
     metadata_items: Mapped[list[DocumentMetadata]] = relationship(
@@ -128,7 +132,7 @@ class DocumentVersion(Base):
     storage_uri: Mapped[str] = mapped_column(String(500))
     content_hash: Mapped[str] = mapped_column(String(128), index=True)
     created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     document: Mapped[Document] = relationship(back_populates="versions")
@@ -196,7 +200,7 @@ class ExternalRecordReference(Base):
     source_system: Mapped[str] = mapped_column(String(120))
     external_record_id: Mapped[str] = mapped_column(String(255), index=True)
     record_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
     case: Mapped[Case | None] = relationship(back_populates="external_references")
     document: Mapped[Document | None] = relationship(back_populates="external_references")
@@ -213,7 +217,7 @@ class AuthorizedAccess(Base):
     )
     purpose: Mapped[str] = mapped_column(String(255))
     access_level: Mapped[str] = mapped_column(String(50), default="read")
-    valid_from: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    valid_from: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped[User] = relationship(back_populates="access_grants")
