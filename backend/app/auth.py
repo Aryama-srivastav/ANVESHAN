@@ -34,4 +34,11 @@ def get_current_user(
     user = db.get(User, str(claims["sub"]))
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not active")
+
+    require_mfa = os.getenv("REQUIRE_MFA", "false").lower() in {"1", "true", "yes", "on"}
+    if require_mfa and (not user.mfa_enabled or not (claims.get("mfa_verified") or claims.get("amr"))):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MFA verification required for this environment",
+        )
     return user

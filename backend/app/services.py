@@ -37,6 +37,13 @@ class UserService:
     def create(db: Session, payload: schemas.UserCreate) -> models.User:
         user = models.User(email=payload.email.lower(), full_name=payload.full_name)
         db.add(user)
+        db.flush()
+        default_role = db.scalar(select(models.Role).where(models.Role.name == "user"))
+        if default_role is None:
+            default_role = models.Role(name="user", description="Standard investigator")
+            db.add(default_role)
+            db.flush()
+        db.add(models.UserRole(user_id=user.id, role_id=default_role.id))
         db.commit()
         db.refresh(user)
         return user
@@ -45,6 +52,19 @@ class UserService:
     def list(db: Session) -> list[models.User]:
         stmt: Select[tuple[models.User]] = select(models.User).order_by(models.User.created_at.desc())
         return list(db.scalars(stmt))
+
+
+class RoleService:
+    @staticmethod
+    def ensure_default_roles(db: Session) -> None:
+        for name, description in {
+            "user": "Standard investigator",
+            "admin": "Case and system administrator",
+            "auditor": "Evidence audit reviewer",
+        }.items():
+            if db.scalar(select(models.Role).where(models.Role.name == name)) is None:
+                db.add(models.Role(name=name, description=description))
+        db.commit()
 
 
 class CaseService:
@@ -268,13 +288,36 @@ class AccessService:
 
     @staticmethod
     def require_document_access(
-        db: Session, user_id: str, document: models.Document, required_level: str = "read"
+        db: Session,
+        user_id: str,
+        document: models.Document,
+        required_level: str = "read",
+        *,
+        department: str | None = None,
+        agency: str | None = None,
+        sensitivity_level: str | None = None,
     ) -> None:
         if AccessService._is_admin(db, user_id):
             return
-        if AccessService._has_grant(db, user_id, document_id=document.id, required_level=required_level):
+        if AccessService._has_grant(
+            db,
+            user_id,
+            document_id=document.id,
+            required_level=required_level,
+            department=department,
+            agency=agency,
+            sensitivity_level=sensitivity_level or document.sensitivity_level,
+        ):
             return
-        if AccessService._has_grant(db, user_id, case_id=document.case_id, required_level=required_level):
+        if AccessService._has_grant(
+            db,
+            user_id,
+            case_id=document.case_id,
+            required_level=required_level,
+            department=department,
+            agency=agency,
+            sensitivity_level=sensitivity_level or document.sensitivity_level,
+        ):
             return
         raise PermissionError("User is not authorized for this document")
 
@@ -300,6 +343,9 @@ class AccessService:
         case_id: str | None = None,
         document_id: str | None = None,
         required_level: str,
+        department: str | None = None,
+        agency: str | None = None,
+        sensitivity_level: str | None = None,
     ) -> bool:
         levels = {"read": 1, "write": 2, "admin": 3}
         minimum = levels[required_level]
@@ -316,6 +362,12 @@ class AccessService:
             valid_until = grant.valid_until
             if valid_until is not None and valid_until.tzinfo is None:
                 valid_until = valid_until.replace(tzinfo=timezone.utc)
+            if department is not None and grant.department is not None and grant.department != department:
+                continue
+            if agency is not None and grant.agency is not None and grant.agency != agency:
+                continue
+            if sensitivity_level is not None and grant.sensitivity_level is not None and grant.sensitivity_level != sensitivity_level:
+                continue
             if levels.get(grant.access_level, 0) >= minimum and valid_from <= now and (
                 valid_until is None or now <= valid_until
             ):

@@ -44,6 +44,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
     roles: Mapped[list[UserRole]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -235,6 +236,9 @@ class AuthorizedAccess(Base):
         ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True
     )
     purpose: Mapped[str] = mapped_column(String(255))
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    agency: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    sensitivity_level: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     access_level: Mapped[str] = mapped_column(String(50), default="read")
     valid_from: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

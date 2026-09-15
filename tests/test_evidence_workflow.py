@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "backend"))
 
 from app.db import get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Base, User  # noqa: E402
+from app.models import Base, Role, User  # noqa: E402
+from app.services import RoleService  # noqa: E402
 
 
 @pytest.fixture()
@@ -28,6 +29,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestCli
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}", future=True)
     testing_session = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)
     Base.metadata.create_all(bind=engine)
+    seed_roles = testing_session()
+    RoleService.ensure_default_roles(seed_roles)
+    seed_roles.close()
     seed_session = testing_session()
     actor = User(email="investigator@example.test", full_name="Synthetic Investigator")
     seed_session.add(actor)
@@ -199,6 +203,54 @@ def test_case_custody_events_are_appended_and_chained(client: TestClient) -> Non
     assert events_response.status_code == 200
     event_types = [item["event_type"] for item in events_response.json()]
     assert event_types == ["acquisition", "review"]
+
+
+def test_mfa_is_required_when_enabled_for_the_environment(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REQUIRE_MFA", "true")
+    db = client.testing_session()
+    user = db.get(User, client.actor_id)
+    assert user is not None
+    user.mfa_enabled = True
+    db.commit()
+    db.close()
+
+    token = jwt.encode(
+        {"sub": client.actor_id, "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        "test-secret-key-that-is-at-least-32-bytes-long",
+        algorithm="HS256",
+    )
+    response = client.get("/v1/cases", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+    assert "MFA" in response.json()["detail"]
+
+
+def test_default_roles_and_abac_metadata_are_available(client: TestClient) -> None:
+    db = client.testing_session()
+    assert {role.name for role in db.query(Role).all()} == {"user", "admin", "auditor"}
+    db.close()
+
+    case_response = client.post(
+        "/v1/cases",
+        json={"case_number": "CASE-ABAC", "title": "ABAC metadata test"},
+    )
+    case_id = case_response.json()["id"]
+    grant_response = client.post(
+        "/v1/access-grants",
+        json={
+            "user_id": client.actor_id,
+            "case_id": case_id,
+            "purpose": "department review",
+            "department": "forensics",
+            "agency": "lab-a",
+            "sensitivity_level": "restricted",
+            "access_level": "read",
+        },
+    )
+    assert grant_response.status_code == 201
+    grant = grant_response.json()
+    assert grant["department"] == "forensics"
+    assert grant["agency"] == "lab-a"
+    assert grant["sensitivity_level"] == "restricted"
 
 
 def test_unauthenticated_and_unauthorized_access_is_rejected(client: TestClient) -> None:
