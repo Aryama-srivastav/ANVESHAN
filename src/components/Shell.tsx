@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, Files, UploadCloud, ShieldCheck, Share2,
-  ScrollText, Boxes, Users, Settings, Bell, Search, Menu, X,
+  ScrollText, Boxes, Users, Settings, Bell, Search, Menu,
   Shield, ChevronRight, LogOut, FileCheck2, Activity,
 } from 'lucide-react';
 import { useStore } from '../store';
@@ -41,7 +41,7 @@ function Brand() {
         <Shield size={18} className="text-white" strokeWidth={2.2} />
       </div>
       <div className="leading-tight">
-        <p className="text-[15px] font-bold tracking-tight text-[#0a2342]">VERITAS</p>
+        <p className="text-[15px] font-bold tracking-tight text-[#0a2342]">ANVESHAN</p>
         <p className="mono text-[10px] tracking-wide text-[#68778e]"><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#359268] align-middle" />Sovereign Node · DL-04</p>
       </div>
     </div>
@@ -49,7 +49,7 @@ function Brand() {
 }
 
 export default function Shell({ children }: { children: React.ReactNode }) {
-  const { unreadCount, notifications, currentUser, setCurrentUser, blocks, transactions } = useStore();
+  const { unreadCount, notifications, currentUser, signOut, blocks, transactions } = useStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -65,7 +65,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  useEffect(() => { setMobileOpen(false); setNotifOpen(false); }, [loc.pathname]);
+  const closePanels = useCallback(() => {
+    setMobileOpen(false);
+    setNotifOpen(false);
+  }, []);
 
   const crumbs = useMemo(() => {
     const path = loc.pathname;
@@ -90,7 +93,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4 pt-1" aria-label="Primary">
         {NAV.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('v-navlink', (isActive || (n.to !== '/' && loc.pathname.startsWith(n.to + '/'))) && 'active')}>
+          <NavLink key={n.to} to={n.to} end={n.end} onClick={closePanels} className={({ isActive }) => cx('v-navlink', (isActive || (n.to !== '/' && loc.pathname.startsWith(n.to + '/'))) && 'active')}>
             <n.icon size={16} strokeWidth={2} className="shrink-0 opacity-70" />
             <span>{n.label}</span>
             {n.to === '/verify' && pendingCount > 0 && (
@@ -103,7 +106,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
       <div className="border-t border-[#e1e7ef] px-3 py-3">
-        <button onClick={() => { setCurrentUser(null); nav('/login'); }} className="v-navlink w-full text-left" aria-label="Sign out">
+        <button onClick={() => { void signOut().finally(() => nav('/login')); }} className="v-navlink w-full text-left" aria-label="Sign out">
           <LogOut size={16} className="opacity-70" /> Sign out
         </button>
         <div className="mt-2 flex items-center gap-2.5 rounded-lg border border-[#e1e7ef] bg-white p-2">
@@ -140,7 +143,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2.5 px-4 py-2 sm:px-6">
             <button className="rounded-lg p-2 text-[#3c4f68] hover:bg-[#eef1f6] lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu size={18} /></button>
             <div className="hidden min-w-0 items-center gap-2 text-[12.5px] sm:flex" aria-label="Breadcrumbs">
-              <span className="text-[13px] font-bold tracking-tight text-[#0a2342]">VERITAS</span>
+              <span className="text-[13px] font-bold tracking-tight text-[#0a2342]">ANVESHAN</span>
               <span className="text-[#b6c1d2]">/</span>
               {crumbs.map((c, i) => (
                 <span key={i} className="flex items-center gap-2">
@@ -199,7 +202,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         </main>
         <footer className="border-t border-[#e1e7ef] bg-[#f1f4f8] px-6 py-2.5">
           <p className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[#7d8b9f]">
-            <span className="font-bold text-[#0a2342]">VERITAS</span>
+            <span className="font-bold text-[#0a2342]">ANVESHAN</span>
             <span>Secure. Traceable. Verifiable.</span>
             <span className="mono ml-auto">Prototype demo data · Permissioned Ledger Node DL-04 · 08 Sep 2026</span>
           </p>
@@ -221,7 +224,7 @@ function GlobalSearch({ onClose }: { onClose: () => void }) {
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
     if (query.length < 2) return [];
-    const out: any[] = [];
+    const out: Array<{ kind: string; label: string; sub: string; go: string }> = [];
     cases.forEach((c) => {
       if (c.case_number.toLowerCase().includes(query) || c.title.toLowerCase().includes(query))
         out.push({ kind: 'Case', label: c.case_number, sub: c.title, go: `/cases/${c.id}` });
@@ -251,7 +254,7 @@ function GlobalSearch({ onClose }: { onClose: () => void }) {
       <div className="relative w-full max-w-[560px] overflow-hidden rounded-xl border border-[#e1e7ef] bg-white shadow-xl v-fade-up">
         <div className="flex items-center gap-2 border-b border-[#e8edf3] px-4 py-3">
           <Search size={16} className="shrink-0 text-[#68778e]" />
-          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cases, documents, users, transactions, hashes…" className="flex-1 bg-transparent text-[13.5px] outline-none placeholder:text-[#93a0b4]" aria-label="Search VERITAS" />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cases, documents, users, transactions, hashes…" className="flex-1 bg-transparent text-[13.5px] outline-none placeholder:text-[#93a0b4]" aria-label="Search ANVESHAN" />
           <span className="kbd">ESC</span>
         </div>
         <div className="max-h-[320px] overflow-y-auto p-1.5">
@@ -272,5 +275,3 @@ function GlobalSearch({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
-
-export function XIcon() { return <X size={16} />; }

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, ChevronDown, ChevronRight } from 'lucide-react';
-import { useStore } from '../store';
+import { useStore, type AuditItem } from '../store';
 import { StatusBadge, SectionTitle, EmptyState } from '../components/Badges';
 import { fmtDateTime } from '../lib/utils';
 
@@ -14,7 +14,7 @@ export default function Audit() {
   const [q, setQ] = useState('');
   const [action, setAction] = useState('All');
   const [result, setResult] = useState('All');
-  const [open, setOpen] = useState<number | null>(null);
+  const [open, setOpen] = useState<number | string | null>(null);
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
@@ -31,7 +31,7 @@ export default function Audit() {
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const rows = filtered.slice((page - 1) * PAGE, page * PAGE);
 
-  const goResource = (a: any) => {
+  const goResource = (a: AuditItem) => {
     if (a.resource_id?.startsWith('DOC')) nav(`/documents/${a.resource_id}`);
     else if (a.reference?.startsWith('TX-')) nav(`/ledger/${a.reference}`);
   };

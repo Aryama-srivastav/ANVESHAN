@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FolderOpen, Files, ClipboardCheck, ArrowRight, ShieldCheck, Activity, AlertTriangle, Clock, ChevronRight, Network } from 'lucide-react';
+import { FolderOpen, Files, ClipboardCheck, ArrowRight, ShieldCheck, AlertTriangle, Clock, ChevronRight, Network } from 'lucide-react';
 import { useStore } from '../store';
 import { StatusBadge, IntegrityBadge, SectionTitle } from '../components/Badges';
 import { timeAgo, fmtDateTime, shortHash, cx } from '../lib/utils';
@@ -20,7 +20,17 @@ function useCountUp(target: number, dur = 850) {
   return v;
 }
 
-function Kpi({ icon: Icon, label, value, suffix, sub, badge, onClick }: any) {
+type KpiProps = {
+  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
+  label: string;
+  value: number | string;
+  suffix?: string;
+  sub: string;
+  badge: ReactNode;
+  onClick: () => void;
+};
+
+function Kpi({ icon: Icon, label, value, suffix, sub, badge, onClick }: KpiProps) {
   const n = useCountUp(typeof value === 'number' ? value : 0);
   return (
     <button onClick={onClick} className="v-card v-card-hover p-4 text-left" aria-label={label}>
@@ -40,11 +50,11 @@ function Kpi({ icon: Icon, label, value, suffix, sub, badge, onClick }: any) {
 }
 
 export default function Dashboard() {
-  const { cases, documents, transactions, blocks, audit, shares } = useStore();
+  const { cases, documents, transactions, blocks, audit, shares, users } = useStore();
   const nav = useNavigate();
 
   const activeCases = cases.filter((c) => c.status === 'Active').length;
-  const highPri = documents.filter((d) => d.integrity_status === 'Pending').length;
+  const pendingVerification = documents.filter((d) => d.integrity_status === 'Pending').length;
   const latestBlock = blocks.length ? [...blocks].sort((a, b) => b.block_number - a.block_number)[0] : null;
   const anchored = transactions.filter((t) => t.status === 'Anchored').length;
 
@@ -55,14 +65,14 @@ export default function Dashboard() {
   const secStats = useMemo(() => ([
     { label: 'Verified documents', v: documents.filter((d) => d.integrity_status === 'Verified').length, total: documents.length },
     { label: 'Anchored transactions', v: anchored, total: transactions.length },
-    { label: 'MFA coverage', v: 100, total: 100, pct: true },
+    { label: 'MFA coverage', v: users.length ? users.filter((user) => user.mfa.toLowerCase() === 'enabled').length : 0, total: users.length, pct: true },
     { label: 'Access-denied events (logged)', v: audit.filter((a) => a.result === 'Denied' || a.action === 'Access Denied').length, total: Math.max(audit.length, 1) },
-  ]), [documents, transactions, audit, anchored]);
+  ]), [documents, transactions, audit, anchored, users]);
 
   return (
     <div className="space-y-6">
       {/* Hero — Stitch authority panel, single accent surface */}
-      <section className="overflow-hidden rounded-xl bg-[#0a2342] px-6 py-6 text-white sm:px-7 sm:py-7" aria-label="VERITAS overview">
+      <section className="overflow-hidden rounded-xl bg-[#0a2342] px-6 py-6 text-white sm:px-7 sm:py-7" aria-label="ANVESHAN overview">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -81,8 +91,8 @@ export default function Dashboard() {
 
       {/* KPI strip — quiet labels, strong numbers */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Key metrics">
-        <Kpi icon={FolderOpen} label="Active Cases" value={activeCases || 24} sub="Dossiers sealed under CrPC Section 65B" badge={<span className="v-pill v-pill-ok">+2 this week</span>} onClick={() => nav('/cases')} />
-        <Kpi icon={ClipboardCheck} label="Pending Verification" value={7} sub="Awaiting cryptographic check against IO signature" badge={<span className="v-pill v-pill-warn">{highPri} high priority</span>} onClick={() => nav('/verify')} />
+        <Kpi icon={FolderOpen} label="Active Cases" value={activeCases} sub="Dossiers currently open in the repository" badge={<span className="v-pill v-pill-info">Live Supabase count</span>} onClick={() => nav('/cases')} />
+        <Kpi icon={ClipboardCheck} label="Pending Verification" value={pendingVerification} sub="Awaiting cryptographic verification" badge={<span className="v-pill v-pill-warn">{pendingVerification} pending</span>} onClick={() => nav('/verify')} />
         <Kpi icon={Files} label="Documents" value={documents.length} sub="Sealed repository · SHA-256 fingerprinted" badge={<span className="v-pill v-pill-ok">{documents.filter((d) => d.integrity_status === 'Verified').length} verified</span>} onClick={() => nav('/documents')} />
         <Kpi icon={Network} label="Ledger Sync Health" value="99.98" suffix="%" sub="Node DL-04 · 8 MHA zones · 14ms latency" badge={<span className="v-pill v-pill-info">Synchronized</span>} onClick={() => nav('/ledger')} />
       </section>
@@ -142,7 +152,7 @@ export default function Dashboard() {
           <div className="mt-3 flex items-center gap-3 rounded-lg bg-[#0a2342] px-4 py-3 text-white">
             <div className="min-w-0">
               <p className="v-meta-label v-meta-on-dark">Latest sealed block</p>
-              <p className="mono text-[21px] font-semibold leading-tight">#{latestBlock?.block_number || 48291}</p>
+              <p className="mono text-[21px] font-semibold leading-tight">{latestBlock ? `#${latestBlock.block_number}` : '—'}</p>
             </div>
             <div className="ml-auto text-right">
               <p className="v-meta-label v-meta-on-dark">Anchored</p>
@@ -211,9 +221,9 @@ export default function Dashboard() {
         <span className="rounded-full bg-[#f6ead0] p-2 text-[#8a6116]"><AlertTriangle size={16} strokeWidth={2} /></span>
         <div className="min-w-0 flex-1">
           <p className="text-[13.5px] font-semibold text-[#1c2c46]">Tamper-detection demo ready</p>
-          <p className="mt-0.5 text-[12.5px] leading-relaxed text-[#6d5a2e]">CDR_Analysis_March.xlsx no longer matches its ledger record. Run verification to see the <span className="font-semibold">Integrity Mismatch</span> state and linked audit event.</p>
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-[#6d5a2e]">Select a document in Verify to recompute its SHA-256 fingerprint against the registered record.</p>
         </div>
-        <button onClick={() => nav('/verify?doc=DOC-20260448')} className="v-btn-primary shrink-0">Run tamper demo <ChevronRight size={14} /></button>
+        <button onClick={() => nav('/verify')} className="v-btn-primary shrink-0">Verify a document <ChevronRight size={14} /></button>
       </section>
 
       {/* Shares expiring */}

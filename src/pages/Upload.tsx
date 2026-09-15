@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { UploadCloud, FileText, CheckCircle2, ShieldCheck, Copy, ArrowRight, AlertCircle, Fingerprint, Link2 } from 'lucide-react';
 import { useStore } from '../store';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { uploadDocumentToSupabase } from '../lib/data';
 import { SectionTitle, StatusBadge } from '../components/Badges';
 import { sha256File, deterministicHash, makeTxId, copyText, cx, fmtDateTime } from '../lib/utils';
 
@@ -15,6 +17,11 @@ const CHECKS = [
   'Antivirus & integrity sandbox',
 ];
 
+const makeValidationRef = () => `VAL-${Math.floor(1000 + Math.random() * 9000)}`;
+const makeFallbackHash = (fileName: string, size: number) => deterministicHash(`${fileName}${size}${Date.now()}`);
+const makeDemoTx = (fileName: string) => makeTxId(`${fileName}${Date.now()}`);
+const makeDemoDocId = (base: number, count: number) => `DOC-${String(base + count + Math.floor(Math.random() * 40)).padStart(8, '0')}`;
+
 export default function Upload() {
   const { cases, documents, api, refresh, pushToast, currentUser } = useStore();
   const nav = useNavigate();
@@ -24,7 +31,7 @@ export default function Upload() {
   const [file, setFile] = useState<File | null>(null);
   const [drag, setDrag] = useState(false);
   const [docType, setDocType] = useState('FIR');
-  const [caseNo, setCaseNo] = useState(params.get('case') || 'NCRB/DEL/2026/004521');
+  const [caseNo, setCaseNo] = useState(() => params.get('case') || 'NCRB/DEL/2026/004521');
   const [classification, setClassification] = useState('Confidential');
   const [tags, setTags] = useState('');
   const [refNo, setRefNo] = useState('');
@@ -43,13 +50,18 @@ export default function Upload() {
   const [copied, setCopied] = useState(false);
   const [realHash, setRealHash] = useState(false);
 
-  useEffect(() => {
-    const c = params.get('case');
-    if (c) setCaseNo(c);
-  }, [params]);
-
   const pick = (f: File | undefined) => {
     if (!f) return;
+    const allowed = ['pdf', 'png', 'jpg', 'jpeg', 'tif', 'tiff'];
+    const extension = f.name.split('.').pop()?.toLowerCase() || '';
+    if (!allowed.includes(extension)) {
+      setFormError('Only PDF and common evidence image files are supported.');
+      return;
+    }
+    if (f.size > 100 * 1024 * 1024) {
+      setFormError('Files must be 100 MB or smaller.');
+      return;
+    }
     setFile(f);
     setPhase('meta');
     setFormError('');
@@ -74,8 +86,10 @@ export default function Upload() {
       setProgress(20 + Math.round(((i + 1) / CHECKS.length) * 20));
     }
     try {
-      await api('audit', 'POST', { row: { actor, action: 'Validation', resource: file.name, resource_id: 'PENDING', result: 'Success', reference: 'VAL-' + Math.floor(1000 + Math.random() * 9000), details: 'Validation passed: format, size, metadata and antivirus checks clear.', timestamp: new Date().toISOString() } });
-    } catch {}
+      await api('audit', 'POST', { row: { actor, action: 'Validation', resource: file.name, resource_id: 'PENDING', result: 'Success', reference: makeValidationRef(), details: 'Validation passed: format, size, metadata and antivirus checks clear.', timestamp: new Date().toISOString() } });
+    } catch {
+      // validation logging is optional in the demo flow
+    }
 
     setStageIdx(2);
     let digest = '';
@@ -84,7 +98,12 @@ export default function Upload() {
       digest = await sha256File(file);
       isReal = true;
     } catch {
-      digest = deterministicHash(file.name + file.size + Date.now());
+      if (isSupabaseConfigured) {
+        setFormError('The browser could not calculate a SHA-256 hash for this file.');
+        setPhase('meta');
+        return;
+      }
+      digest = makeFallbackHash(file.name, file.size);
     }
     setRealHash(isReal);
     for (let i = 0; i < digest.length; i += 4) {
@@ -93,35 +112,64 @@ export default function Upload() {
       await wait(55);
     }
     setHash(digest);
-    try {
-      await api('audit', 'POST', { row: { actor, action: 'Hash Generation', resource: file.name, resource_id: 'PENDING', result: 'Success', reference: 'SHA-256', details: isReal ? 'Actual SHA-256 digest computed locally from file bytes.' : 'Demo SHA-256 digest generated deterministically (prototype data).', timestamp: new Date().toISOString() } });
-    } catch {}
+    if (!isSupabaseConfigured) {
+      try {
+        await api('audit', 'POST', { row: { actor, action: 'Hash Generation', resource: file.name, resource_id: 'PENDING', result: 'Success', reference: 'SHA-256', details: 'Actual SHA-256 digest computed locally from file bytes.', timestamp: new Date().toISOString() } });
+      } catch {
+        // Hash logging is optional in legacy local mode.
+      }
+    }
 
     setStageIdx(3);
-    const tx = makeTxId(file.name + Date.now());
-    setTxId(tx);
     await animateProgress(66, 96, 1600);
-    const newDocId = 'DOC-' + String(20260460 + documents.length + Math.floor(Math.random() * 40)).padStart(8, '0');
-    setDocId(newDocId);
+    const selectedCase = cases.find((item) => item.case_number === caseNo);
+    if (isSupabaseConfigured && !selectedCase) {
+      setFormError('Select an existing Supabase case before uploading evidence.');
+      setPhase('meta');
+      return;
+    }
+    const tx = isSupabaseConfigured ? 'LOCAL-PENDING' : makeDemoTx(file.name);
+    setTxId(tx);
+    const newDocId = isSupabaseConfigured
+      ? ''
+      : makeDemoDocId(20260460, documents.length);
+    if (newDocId) setDocId(newDocId);
     const now = new Date().toISOString();
     const ext = file.name.split('.').pop()?.toUpperCase() || 'PDF';
     try {
-      await api('documents', 'POST', {
-        row: {
-          id: newDocId, filename: file.name, file_type: ext.slice(0, 4), case_number: caseNo,
-          version: 'v1.0', classification, uploader: actor, updated_at: now,
-          integrity_status: 'Verified', sha256: digest, tx_id: tx,
-          size_text: file.size > 1048576 ? `${(file.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`,
-          ref_number: refNo, tags: tags || docType, description: description || `${docType} uploaded via VERITAS ingest pipeline.`,
-        },
-      });
-      await api('transactions', 'POST', { row: { tx_id: tx, block_number: 48292, doc_id: newDocId, doc_name: file.name, case_number: caseNo, hash: digest, timestamp: now, status: 'Anchored', actor } });
-      await api('audit', 'POST', { row: { actor, action: 'Upload', resource: file.name, resource_id: newDocId, result: 'Success', reference: caseNo, details: `Document uploaded to case ${caseNo} with classification ${classification}.`, timestamp: now } });
-      await api('audit', 'POST', { row: { actor, action: 'Ledger Anchor', resource: file.name, resource_id: newDocId, result: 'Success', reference: tx, details: 'SHA-256 fingerprint anchored to permissioned ledger (prototype/demo transaction). Consensus validated across 8 MHA zones.', timestamp: now } });
-      await api('notifications', 'POST', { row: { title: 'Document securely anchored', message: `${file.name} anchored as ${tx} in block #48292.`, type: 'success', time: now, read: false, link: 'ledger' } });
-      const cs = cases.find((c) => c.case_number === caseNo);
-      if (cs) await api('cases', 'PUT', { idCol: 'id', idVal: cs.id, patch: { doc_count: (cs.doc_count || 0) + 1, last_activity: now } }).catch(() => null);
-    } catch { /* demo continues */ }
+      if (isSupabaseConfigured && selectedCase) {
+        const created = await uploadDocumentToSupabase({
+          file,
+          caseId: selectedCase.id,
+          classification,
+          documentType: docType,
+          description,
+          referenceNumber: refNo,
+          hash: digest,
+          user: currentUser,
+        });
+        setDocId(created.documentId);
+      } else {
+        await api('documents', 'POST', {
+          row: {
+            id: newDocId, filename: file.name, file_type: ext.slice(0, 4), case_number: caseNo,
+            version: 'v1.0', classification, uploader: actor, updated_at: now,
+            integrity_status: 'Verified', sha256: digest, tx_id: tx,
+            size_text: file.size > 1048576 ? `${(file.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`,
+            ref_number: refNo, tags: tags || docType, description: description || `${docType} uploaded via ANVESHAN ingest pipeline.`,
+          },
+        });
+        await api('transactions', 'POST', { row: { tx_id: tx, block_number: 48292, doc_id: newDocId, doc_name: file.name, case_number: caseNo, hash: digest, timestamp: now, status: 'Anchored', actor } });
+        await api('audit', 'POST', { row: { actor, action: 'Upload', resource: file.name, resource_id: newDocId, result: 'Success', reference: caseNo, details: `Document uploaded to case ${caseNo} with classification ${classification}.`, timestamp: now } });
+        await api('audit', 'POST', { row: { actor, action: 'Ledger Anchor', resource: file.name, resource_id: newDocId, result: 'Success', reference: tx, details: 'SHA-256 fingerprint anchored to permissioned ledger (prototype/demo transaction). Consensus validated across 8 MHA zones.', timestamp: now } });
+        await api('notifications', 'POST', { row: { title: 'Document securely anchored', message: `${file.name} anchored as ${tx} in block #48292.`, type: 'success', time: now, read: false, link: 'ledger' } });
+        if (selectedCase) await api('cases', 'PUT', { idCol: 'id', idVal: selectedCase.id, patch: { doc_count: (selectedCase.doc_count || 0) + 1, last_activity: now } }).catch(() => null);
+      }
+    } catch (error: unknown) {
+      setFormError(error instanceof Error ? error.message : 'The evidence upload could not be completed.');
+      setPhase('meta');
+      return;
+    }
 
     setProgress(100);
     setPhase('done');
@@ -141,7 +189,7 @@ export default function Upload() {
     });
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  const doneAt = useMemo(() => new Date().toISOString(), [phase]);
+  const doneAt = useMemo(() => new Date().toISOString(), []);
   const currentStage = phase === 'done' ? 4 : Math.min(stageIdx, 3);
 
   return (

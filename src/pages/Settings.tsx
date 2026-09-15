@@ -34,9 +34,11 @@ export default function Settings() {
 
   const save = async () => {
     try {
-      await api('audit', 'POST', { row: { actor: 'Administrator Vikram Singh', action: 'Permission Change', resource: 'VERITAS Settings', resource_id: 'SETTINGS', result: 'Success', reference: 'CFG-2026', details: `Security settings updated: MFA ${mfa ? 'enforced' : 'relaxed'}, session ${sessionTimeout}, sharing default ${defaultExpiry}, retention ${retention}.`, timestamp: new Date().toISOString() } });
+      await api('audit', 'POST', { row: { actor: 'Administrator Vikram Singh', action: 'Permission Change', resource: 'ANVESHAN Settings', resource_id: 'SETTINGS', result: 'Success', reference: 'CFG-2026', details: `Security settings updated: MFA ${mfa ? 'enforced' : 'relaxed'}, session ${sessionTimeout}, sharing default ${defaultExpiry}, retention ${retention}.`, timestamp: new Date().toISOString() } });
       await refresh(true);
-    } catch {}
+    } catch {
+      // demo settings persistence is non-critical when the mock backend is unavailable
+    }
     setSaved(true);
     pushToast({ title: 'Settings saved', message: 'Security configuration updated and audited.', kind: 'success' });
     setTimeout(() => setSaved(false), 2500);

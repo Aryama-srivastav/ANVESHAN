@@ -50,7 +50,7 @@ function Boot() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-2.5 bg-[#edf0f5]">
         <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#0a2342] text-white"><span className="v-spin h-5 w-5 rounded-full border-2 border-white/30 border-t-white" /></span>
-        <p className="text-[14px] font-bold text-[#0a2342]">VERITAS</p>
+        <p className="text-[14px] font-bold text-[#0a2342]">ANVESHAN</p>
         <p className="mono text-[11px] text-[#68778e]">Connecting to Sovereign Node DL-04…</p>
       </div>
     );
@@ -59,7 +59,7 @@ function Boot() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#edf0f5] px-4">
         <div className="v-card max-w-md p-6 text-center">
-          <p className="text-[15px] font-semibold text-[#1c2c46]">Could not reach VERITAS data services</p>
+          <p className="text-[15px] font-semibold text-[#1c2c46]">Could not reach ANVESHAN data services</p>
           <p className="mono mt-1 break-all text-[11.5px] text-[#68778e]">{error}</p>
           <button onClick={() => refresh()} className="v-btn-primary mx-auto mt-4">Retry connection</button>
         </div>

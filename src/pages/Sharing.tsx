@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Share2, Plus, Trash2, AlertTriangle, X } from 'lucide-react';
-import { useStore } from '../store';
+import { useStore, type ShareItem } from '../store';
 import { StatusBadge, SectionTitle, EmptyState } from '../components/Badges';
 import { fmtDateTime, timeAgo } from '../lib/utils';
 
@@ -16,7 +16,7 @@ export default function Sharing() {
   const [expiry, setExpiry] = useState('7 days');
   const [customDays, setCustomDays] = useState('14');
   const [formError, setFormError] = useState('');
-  const [revoking, setRevoking] = useState<any | null>(null);
+  const [revoking, setRevoking] = useState<ShareItem | null>(null);
   const [filter, setFilter] = useState('All');
 
   const active = shares.filter((s) => s.status !== 'Revoked');
@@ -41,13 +41,13 @@ export default function Sharing() {
           expiry_label: expiry === 'Custom' ? `Custom (${days}d)` : expiry, status: 'Active',
         },
       });
-      const shr = res?.[0];
-      await api('audit', 'POST', { row: { actor: currentUser?.name || 'Inspector Ananya Sharma', action: 'Share', resource: doc?.filename || docId, resource_id: docId, result: 'Success', reference: shr ? `SHR-${shr.id}` : 'SHR-NEW', details: `${permission} access granted to ${recipient.trim()}, ${expiry === 'Custom' ? `${days}-day` : expiry} expiry.`, timestamp: now.toISOString() } });
+      const createdShare = Array.isArray(res) ? (res[0] as { id?: number } | undefined) : undefined;
+      await api('audit', 'POST', { row: { actor: currentUser?.name || 'Inspector Ananya Sharma', action: 'Share', resource: doc?.filename || docId, resource_id: docId, result: 'Success', reference: createdShare?.id ? `SHR-${createdShare.id}` : 'SHR-NEW', details: `${permission} access granted to ${recipient.trim()}, ${expiry === 'Custom' ? `${days}-day` : expiry} expiry.`, timestamp: now.toISOString() } });
       await refresh(true);
       setShowNew(false); setRecipient(''); setEmail('');
       pushToast({ title: 'Access granted', message: `${doc?.filename} shared with ${recipient.trim()} (${permission}).`, kind: 'success' });
-    } catch (e: any) {
-      setFormError(e.message || 'Failed to create share.');
+    } catch (error: unknown) {
+      setFormError(error instanceof Error ? error.message : 'Failed to create share.');
     }
   };
 
@@ -58,7 +58,9 @@ export default function Sharing() {
       await api('audit', 'POST', { row: { actor: currentUser?.name || 'Inspector Ananya Sharma', action: 'Revoke', resource: revoking.doc_name, resource_id: revoking.doc_id, result: 'Success', reference: `SHR-${revoking.id}`, details: `Share revoked before expiry. Recipient ${revoking.recipient} access terminated immediately.`, timestamp: new Date().toISOString() } });
       await refresh(true);
       pushToast({ title: 'Access revoked', message: `${revoking.doc_name} — ${revoking.recipient}. Audit event created.`, kind: 'warning' });
-    } catch {}
+    } catch {
+      /* keep the revoke action non-blocking for the UI */
+    }
     setRevoking(null);
   };
 

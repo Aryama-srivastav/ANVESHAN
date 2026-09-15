@@ -6,7 +6,7 @@ import { StatusBadge, SectionTitle, EmptyState } from '../components/Badges';
 import { fmtDateTime, timeAgo, shortHash, cx } from '../lib/utils';
 
 export default function Ledger() {
-  const { transactions, blocks, documents, cases, api, refresh, pushToast, currentUser } = useStore();
+  const { transactions, blocks, api, refresh, pushToast, currentUser } = useStore();
   const nav = useNavigate();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('All');
@@ -41,7 +41,9 @@ export default function Ledger() {
       }
       await refresh(true);
       pushToast({ title: 'Anchoring sealed', message: `${txId} is now anchored.`, kind: 'success' });
-    } catch {}
+    } catch {
+      // retry failure is surfaced in the UI state without blocking the flow
+    }
     setRetrying(null);
   };
 

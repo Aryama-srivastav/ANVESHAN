@@ -21,12 +21,13 @@ export function StatusBadge({ status }: { status: string }) {
   return <Pill tone="neutral">{status}</Pill>;
 }
 
-export function ClassificationBadge({ level }: { level: string }) {
-  const l = (level || '').toLowerCase();
+export function ClassificationBadge({ level }: { level?: string }) {
+  const safeLevel = level || 'Internal';
+  const l = safeLevel.toLowerCase();
   if (l === 'top secret')
     return (
       <span className="inline-flex items-center rounded-md bg-[#0a2342] px-2 py-[3px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-white whitespace-nowrap">
-        {level}
+        {safeLevel}
       </span>
     );
   const tone =
@@ -37,7 +38,7 @@ export function ClassificationBadge({ level }: { level: string }) {
         : 'border-[#dde3ec] bg-[#f4f6f9] text-[#5b6b82]';
   return (
     <span className={cx('inline-flex items-center rounded-md border px-2 py-[3px] text-[10.5px] font-semibold uppercase tracking-[0.06em] whitespace-nowrap', tone)}>
-      {level}
+      {safeLevel}
     </span>
   );
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileText, ShieldCheck, Copy, Download, Share2, AlertTriangle, Clock, Link2, History } from 'lucide-react';
-import { useStore } from '../store';
+import { useStore, type ShareItem } from '../store';
 import { IntegrityBadge, ClassificationBadge, StatusBadge } from '../components/Badges';
 import { fmtDateTime, timeAgo, shortHash, copyText, cx } from '../lib/utils';
 
@@ -26,7 +26,9 @@ export default function DocumentDetail() {
       await api('audit', 'POST', { row: { actor: currentUser?.name || 'Inspector Ananya Sharma', action: 'Download', resource: doc.filename, resource_id: doc.id, result: 'Success', reference: doc.tx_id, details: 'Authorised download. Watermarked copy issued and logged.', timestamp: new Date().toISOString() } });
       await refresh(true);
       pushToast({ title: 'Download logged', message: `${doc.filename} — watermarked copy issued.`, kind: 'info' });
-    } catch {}
+    } catch {
+      // The demo backend is intentionally best-effort for UI actions.
+    }
   };
 
   const versions = [
@@ -139,7 +141,7 @@ export default function DocumentDetail() {
                 {tab === 'access' && (
                   <div className="space-y-1.5">
                     {docShares.length === 0 && <p className="py-4 text-center text-[12.5px] text-[#68778e]">No shares for this document.</p>}
-                    {docShares.map((s) => (
+                    {docShares.map((s: ShareItem) => (
                       <div key={s.id} className="v-panel flex items-center gap-3 px-3.5 py-2.5">
                         <span className="min-w-0 flex-1"><span className="block truncate text-[12.5px] font-semibold text-[#1c2c46]">{s.recipient}</span><span className="block text-[11px] text-[#68778e]">{s.permission} · expires {fmtDateTime(s.expires_at)}</span></span>
                         <StatusBadge status={s.status} />

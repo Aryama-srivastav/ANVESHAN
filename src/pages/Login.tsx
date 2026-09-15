@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Lock, Fingerprint, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useStore } from '../store';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { recordSupabaseAudit } from '../lib/data';
 
 export default function Login() {
   const nav = useNavigate();
-  const { users, setCurrentUser, api, pushToast } = useStore();
+  const { api, pushToast, signInWithPassword, testSupabaseConnection } = useStore();
   const [step, setStep] = useState<'login' | 'mfa'>('login');
-  const [email, setEmail] = useState('ananya.sharma@veritas.gov.in');
-  const [password, setPassword] = useState('veritas2026');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -20,14 +22,37 @@ export default function Login() {
     if (!email.includes('@')) { setError('Enter a valid official email address.'); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     setBusy(true);
-    await new Promise((r) => setTimeout(r, 900));
-    const found = users.find((u) => u.email.toLowerCase() === email.toLowerCase()) || users[0];
-    setCurrentUser({ name: found?.name || 'Insp. Ananya Sharma', role: found?.role || 'Investigating Officer', email });
     try {
-      await api('audit', 'POST', { row: { actor: found?.name || 'Inspector Ananya Sharma', action: 'Login', resource: 'VERITAS Console', resource_id: 'SESSION', result: 'Success', reference: 'MFA-OK', details: 'Successful login with MFA challenge issued to registered device.', timestamp: new Date().toISOString() } });
-    } catch {}
-    setBusy(false);
-    setStep('mfa');
+      const connection = await testSupabaseConnection();
+      if (!connection.ok) throw new Error(connection.message);
+      const signedInUser = await signInWithPassword(email.trim(), password);
+      try {
+        if (isSupabaseConfigured) {
+          await recordSupabaseAudit({
+            action: 'LOGIN',
+            resource: 'ANVESHAN Console',
+            resourceId: 'SESSION',
+            result: 'Success',
+            reference: 'SUPABASE-AUTH',
+            details: 'Successful Supabase email/password sign-in.',
+            user: signedInUser,
+          });
+        } else {
+          await api('audit', 'POST', { row: { actor: signedInUser.name || signedInUser.email || email.trim(), action: 'Login', resource: 'ANVESHAN Console', resource_id: 'SESSION', result: 'Success', reference: 'SUPABASE-AUTH', details: 'Successful Supabase email/password sign-in.', timestamp: new Date().toISOString() } });
+        }
+      } catch {
+        // Audit logging is best-effort after authentication succeeds.
+      }
+      pushToast({ title: 'Welcome back', message: 'Signed in to ANVESHAN.', kind: 'success' });
+      nav('/');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to sign in.';
+      setError(msg.includes('VITE_SUPABASE')
+        ? 'Missing Supabase configuration. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY locally.'
+        : msg);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const doMfa = async (e?: React.FormEvent) => {
@@ -38,7 +63,7 @@ export default function Login() {
     setBusy(true);
     await new Promise((r) => setTimeout(r, 1000));
     setBusy(false);
-    pushToast({ title: 'Welcome back', message: 'Signed in to VERITAS Sovereign Node DL-04.', kind: 'success' });
+    pushToast({ title: 'Welcome back', message: 'Signed in to ANVESHAN Sovereign Node DL-04.', kind: 'success' });
     nav('/');
   };
 
@@ -55,7 +80,7 @@ export default function Login() {
         <div className="flex items-center gap-2.5">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10"><Shield size={20} strokeWidth={2} /></div>
           <div>
-            <p className="text-[18px] font-bold tracking-tight">VERITAS</p>
+            <p className="text-[18px] font-bold tracking-tight">ANVESHAN</p>
             <p className="text-[12px] text-blue-200/80">Secure Digital Document Management</p>
           </div>
         </div>
@@ -84,7 +109,7 @@ export default function Login() {
         <div className="w-full max-w-[400px]">
           <div className="mb-5 flex items-center gap-2.5 lg:hidden">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0a2342]"><Shield size={18} className="text-white" /></div>
-            <div><p className="text-[15px] font-bold text-[#0a2342]">VERITAS</p><p className="text-[11px] text-[#68778e]">Secure Digital Document Management</p></div>
+            <div><p className="text-[15px] font-bold text-[#0a2342]">ANVESHAN</p><p className="text-[11px] text-[#68778e]">Secure Digital Document Management</p></div>
           </div>
 
           <div className="v-card px-6 py-6">
@@ -95,7 +120,7 @@ export default function Login() {
                 <form onSubmit={doLogin} className="mt-4 space-y-3">
                   <div>
                     <label htmlFor="email" className="mb-1 block">Official email</label>
-                    <input id="email" type="email" className="v-input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@veritas.gov.in" autoComplete="username" />
+                    <input id="email" type="email" className="v-input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@anveshan.gov.in" autoComplete="username" />
                   </div>
                   <div>
                     <label htmlFor="password" className="mb-1 block">Password</label>
@@ -106,11 +131,11 @@ export default function Login() {
                   </label>
                   {error && <p className="flex items-start gap-2 rounded-lg border border-[#efc5c1] bg-[#fdf1f0] px-3 py-2 text-[12.5px] font-medium text-[#93312a]"><AlertCircle size={14} className="mt-0.5 shrink-0" />{error}</p>}
                   <button type="submit" disabled={busy} className="v-btn-primary w-full justify-center">
-                    {busy ? <span className="v-spin h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white" /> : <Lock size={14} />} {busy ? 'Authenticating…' : 'Continue to MFA'}
+                    {busy ? <span className="v-spin h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white" /> : <Lock size={14} />} {busy ? 'Authenticating…' : 'Sign in'}
                   </button>
                 </form>
                 <div className="v-panel mt-4 px-3.5 py-2.5 text-[12px] leading-relaxed text-[#5d6d84]">
-                  <span className="font-semibold text-[#0a2342]">Demo access:</span> use the prefilled credentials and any 6-digit MFA code to enter. No real backend — fictional demo authentication.
+                  <span className="font-semibold text-[#0a2342]">Supabase authentication:</span> use an authorised email/password account from the Anveshan Supabase project.
                 </div>
               </>
             ) : (
@@ -127,14 +152,14 @@ export default function Login() {
                   </div>
                   {error && <p className="mt-3 flex items-start gap-2 rounded-lg border border-[#efc5c1] bg-[#fdf1f0] px-3 py-2 text-[12.5px] font-medium text-[#93312a]"><AlertCircle size={14} className="mt-0.5 shrink-0" />{error}</p>}
                   <button type="submit" disabled={busy} className="v-btn-primary mt-3.5 w-full justify-center">
-                    {busy ? <span className="v-spin h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white" /> : <>Verify & enter VERITAS <ArrowRight size={14} /></>} {busy ? 'Verifying…' : ''}
+                    {busy ? <span className="v-spin h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white" /> : <>Verify & enter ANVESHAN <ArrowRight size={14} /></>} {busy ? 'Verifying…' : ''}
                   </button>
                   <button type="button" onClick={() => setStep('login')} className="mt-2.5 w-full text-center text-[12.5px] font-semibold text-[#2456c6] hover:underline">Back to sign in</button>
                 </form>
               </>
             )}
           </div>
-          <p className="mt-3.5 text-center text-[11px] text-[#8a96ad]">VERITAS · Secure. Traceable. Verifiable. · Unauthorised access is prohibited and logged.</p>
+          <p className="mt-3.5 text-center text-[11px] text-[#8a96ad]">ANVESHAN · Secure. Traceable. Verifiable. · Unauthorised access is prohibited and logged.</p>
         </div>
       </div>
     </div>

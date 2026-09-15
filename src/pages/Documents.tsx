@@ -62,7 +62,7 @@ export default function Documents() {
           <select value={cls} onChange={(e) => { setCls(e.target.value); setPage(1); }} className="v-input v-input-auto" aria-label="Classification filter">
             {['All', 'Top Secret', 'Restricted', 'Confidential', 'Internal'].map((s) => <option key={s} value={s}>{s === 'All' ? 'All classifications' : s}</option>)}
           </select>
-          <select value={sort} onChange={(e) => { setSort(e.target.value as any); setPage(1); }} className="v-input v-input-auto" aria-label="Sort documents">
+          <select value={sort} onChange={(e) => { setSort(e.target.value as 'updated' | 'name'); setPage(1); }} className="v-input v-input-auto" aria-label="Sort documents">
             <option value="updated">Recently updated</option>
             <option value="name">Filename A–Z</option>
           </select>

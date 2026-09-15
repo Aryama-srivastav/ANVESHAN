@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ShieldCheck, AlertTriangle, Copy, ArrowRight, CheckCircle2, FileSearch, Fingerprint, GitCompareArrows, Landmark } from 'lucide-react';
-import { useStore } from '../store';
+import { useStore, type AuditItem, type TransactionItem } from '../store';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { recordSupabaseAudit } from '../lib/data';
+import { sha256File } from '../lib/utils';
 import { SectionTitle, IntegrityBadge } from '../components/Badges';
 import { fmtDateTime, copyText, cx, shortHash } from '../lib/utils';
 
@@ -18,34 +21,32 @@ export default function Verify() {
   const { documents, transactions, audit, api, refresh, pushToast, currentUser } = useStore();
   const nav = useNavigate();
   const [params] = useSearchParams();
-  const [docId, setDocId] = useState(params.get('doc') || 'DOC-20260441');
+  const [docId, setDocId] = useState(() => params.get('doc') || 'DOC-20260441');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [formError, setFormError] = useState('');
   const [tamper, setTamper] = useState(false);
   const [running, setRunning] = useState(false);
   const [step, setStep] = useState(-1);
   const [liveHash, setLiveHash] = useState('');
-  const [result, setResult] = useState<null | { ok: boolean; registered: string; current: string; tx: any; verifiedAt: string; auditId?: number }>(null);
+  const [result, setResult] = useState<null | { ok: boolean; registered: string; current: string; tx: TransactionItem | undefined; verifiedAt: string; auditId?: number }>(null);
   const [copied, setCopied] = useState<'reg' | 'cur' | null>(null);
 
   const doc = useMemo(() => documents.find((d) => d.id === docId), [documents, docId]);
   const tx = useMemo(() => transactions.find((t) => t.tx_id === doc?.tx_id) || transactions.find((t) => t.doc_id === doc?.id), [transactions, doc]);
 
-  useEffect(() => {
-    const d = params.get('doc');
-    if (d) { setDocId(d); setResult(null); setStep(-1); if (d === 'DOC-20260448') setTamper(false); }
-  }, [params]);
-
-  useEffect(() => {
-    if (docId === 'DOC-20260448') setTamper(false);
-  }, [docId]);
-
   const run = async () => {
     if (!doc) return;
+    if (isSupabaseConfigured && !selectedFile) {
+      setFormError('Select the evidence file to calculate its current SHA-256 hash.');
+      return;
+    }
     setRunning(true); setResult(null); setLiveHash(''); setStep(0);
+    setFormError('');
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const registered = tx?.hash || doc.sha256;
     const isMismatchDoc = doc.integrity_status === 'Mismatch';
-    let current = doc.sha256;
-    if (isMismatchDoc || tamper) {
+    let current = selectedFile ? await sha256File(selectedFile) : doc.sha256;
+    if (!selectedFile && (isMismatchDoc || tamper)) {
       current = flipHash(doc.sha256);
     }
     await wait(750); setStep(1);
@@ -62,16 +63,33 @@ export default function Verify() {
     const actor = currentUser?.name || 'Inspector Ananya Sharma';
     let auditId: number | undefined;
     try {
-      const res = await api('audit', 'POST', { row: { actor, action: 'Verification', resource: doc.filename, resource_id: doc.id, result: ok ? 'Success' : 'Mismatch', reference: doc.tx_id, details: ok ? `Integrity verification completed. Current hash matches ledger record${tx ? ` at block #${tx.block_number}` : ''}.` : 'INTEGRITY MISMATCH: current hash differs from registered ledger record. Possible tampering or unsanctioned edit.', timestamp: verifiedAt } });
-      auditId = res?.[0]?.id;
+      const res = isSupabaseConfigured
+        ? null
+        : await api('audit', 'POST', { row: { actor, action: 'Verification', resource: doc.filename, resource_id: doc.id, result: ok ? 'Success' : 'Mismatch', reference: doc.tx_id, details: ok ? `Integrity verification completed. Current hash matches ledger record${tx ? ` at block #${tx.block_number}` : ''}.` : 'INTEGRITY MISMATCH: current hash differs from registered ledger record. Possible tampering or unsanctioned edit.', timestamp: verifiedAt } });
+      if (isSupabaseConfigured) {
+        await recordSupabaseAudit({
+          action: 'DOCUMENT_VERIFIED',
+          resource: doc.filename,
+          resourceId: doc.id,
+          result: ok ? 'Success' : 'Mismatch',
+          reference: doc.tx_id,
+          details: ok ? 'Current file hash matches the registered document hash.' : 'Current file hash does not match the registered document hash.',
+          user: currentUser,
+        });
+      }
+      auditId = Array.isArray(res) ? (res[0] as { id?: number } | undefined)?.id : undefined;
       if (!ok) {
-        await api('documents', 'PUT', { idCol: 'id', idVal: doc.id, patch: { integrity_status: 'Mismatch' } }).catch(() => null);
-        await api('notifications', 'POST', { row: { title: 'Integrity mismatch detected', message: `${doc.filename} does not match its ledger record.`, type: 'alert', time: verifiedAt, read: false, link: 'verify' } });
+        if (!isSupabaseConfigured) {
+          await api('documents', 'PUT', { idCol: 'id', idVal: doc.id, patch: { integrity_status: 'Mismatch' } }).catch(() => null);
+          await api('notifications', 'POST', { row: { title: 'Integrity mismatch detected', message: `${doc.filename} does not match its ledger record.`, type: 'alert', time: verifiedAt, read: false, link: 'verify' } });
+        }
       } else if (doc.integrity_status !== 'Verified') {
-        await api('documents', 'PUT', { idCol: 'id', idVal: doc.id, patch: { integrity_status: 'Verified' } }).catch(() => null);
+        if (!isSupabaseConfigured) await api('documents', 'PUT', { idCol: 'id', idVal: doc.id, patch: { integrity_status: 'Verified' } }).catch(() => null);
       }
       await refresh(true);
-    } catch {}
+    } catch {
+      // verification log may fail in the mock backend without affecting the UI flow
+    }
     setResult({ ok, registered, current, tx, verifiedAt, auditId });
     setStep(4);
     setRunning(false);
@@ -81,7 +99,8 @@ export default function Verify() {
   const mismatchEvent = useMemo(() => {
     if (!result || result.ok || !doc) return null;
     const found = audit.find((a) => a.resource_id === doc.id && (a.result === 'Mismatch' || a.action === 'Verification'));
-    return found || (result.auditId ? { id: result.auditId } : null);
+    if (found) return found;
+    return result.auditId ? ({ id: result.auditId } satisfies Pick<AuditItem, 'id'>) : null;
   }, [result, audit, doc]);
 
   return (
@@ -97,15 +116,20 @@ export default function Verify() {
               {documents.map((d) => <option key={d.id} value={d.id}>{d.filename} · {d.id} · {d.tx_id}</option>)}
             </select>
           </div>
+          <div>
+            <label className="mb-1 block" htmlFor="verification-file">Current evidence file</label>
+            <input id="verification-file" type="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" onChange={(event) => setSelectedFile(event.target.files?.[0] || null)} disabled={running} className="v-input file:mr-2 file:rounded file:border-0 file:bg-[#eef2f7] file:px-2 file:py-1 file:text-[11px]" />
+          </div>
           <button onClick={run} disabled={running || !doc} className="v-btn-primary w-full">
             {running ? <span className="v-spin h-3.5 w-3.5 rounded-full border-2 border-white/40 border-t-white" /> : <ShieldCheck size={15} />} {running ? 'Verifying…' : 'Run verification'}
           </button>
         </div>
+        {formError && <p className="mt-3 rounded-lg border border-[#efc5c1] bg-[#fdf1f0] px-3 py-2 text-[12.5px] font-medium text-[#93312a]">{formError}</p>}
         {doc && (
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[#e8edf3] pt-3">
             <IntegrityBadge status={doc.integrity_status} />
             <span className="mono text-[11.5px] text-[#68778e]">{doc.id} · {doc.tx_id} · {doc.case_number}</span>
-            {doc.id !== 'DOC-20260448' && (
+            {!isSupabaseConfigured && doc.id !== 'DOC-20260448' && (
               <label className="ml-auto flex cursor-pointer items-center gap-2 text-[12.5px] font-medium text-[#3c4f68]">
                 <input type="checkbox" checked={tamper} onChange={(e) => setTamper(e.target.checked)} disabled={running} className="h-3.5 w-3.5 rounded border-[#cfd7e3] accent-[#0a2342]" />
                 Simulate tampered copy
@@ -207,7 +231,7 @@ export default function Verify() {
               {[
                 ['Document', `${doc?.filename} · ${doc?.id}`],
                 ['Transaction', `${doc?.tx_id}${tx ? ` · Block #${tx.block_number}` : ''}`],
-                ['Registered', fmtDateTime(tx?.timestamp || doc?.updated_at)],
+                ['Registered', fmtDateTime(tx?.timestamp || doc?.updated_at || new Date().toISOString())],
                 ['Verified', fmtDateTime(result.verifiedAt)],
                 ['Verified by', currentUser?.name || 'Inspector Ananya Sharma'],
               ].map(([k, v]) => (
@@ -250,7 +274,7 @@ export default function Verify() {
               <button onClick={() => nav('/audit')} className="v-btn-danger-solid">View audit event</button>
               <button onClick={() => nav(`/documents/${doc?.id}`)} className="v-btn-secondary">Open document</button>
             </div>
-            {mismatchEvent && <p className="mono border-t border-[#e8edf3] px-6 py-2.5 text-[11px] text-[#8a96ad]">Linked audit event #{(mismatchEvent as any).id || result.auditId} · auto-logged at {fmtDateTime(result.verifiedAt)}</p>}
+            {mismatchEvent && <p className="mono border-t border-[#e8edf3] px-6 py-2.5 text-[11px] text-[#8a96ad]">Linked audit event #{mismatchEvent.id || result.auditId} · auto-logged at {fmtDateTime(result.verifiedAt)}</p>}
           </div>
         )
       )}
