@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, ArrowUpDown, ChevronLeft, ChevronRight, FolderKanban } from 'lucide-react';
 import { useStore } from '../store';
 import { StatusBadge, ClassificationBadge, SectionTitle, EmptyState } from '../components/Badges';
-import { timeAgo, cx } from '../lib/utils';
+import { timeAgo } from '../lib/utils';
 
 const PAGE = 6;
 

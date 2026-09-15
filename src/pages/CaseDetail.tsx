@@ -14,7 +14,7 @@ export default function CaseDetail() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Documents');
 
   const c = cases.find((x) => String(x.id) === String(id));
-  const docs = useMemo(() => documents.filter((d) => c && d.case_number === c.case_number), [documents, c]);
+  const docs = useMemo(() => documents.filter((d) => c && (d.case_id === c.id || d.case_number === c.case_number)), [documents, c]);
   const events = useMemo(() => {
     if (!c) return [];
     const names = new Set(docs.map((d) => d.filename).concat(docs.map((d) => d.id)));
