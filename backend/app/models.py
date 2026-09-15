@@ -51,6 +51,7 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     access_grants: Mapped[list[AuthorizedAccess]] = relationship(back_populates="user")
+    case_events: Mapped[list[CaseEvent]] = relationship(back_populates="actor")
 
 
 class UserRole(Base):
@@ -81,6 +82,24 @@ class Case(Base):
     external_references: Mapped[list[ExternalRecordReference]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
+    events: Mapped[list[CaseEvent]] = relationship(back_populates="case", cascade="all, delete-orphan")
+
+
+class CaseEvent(Base):
+    __tablename__ = "case_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    case_id: Mapped[str] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
+    action: Mapped[str] = mapped_column(String(255))
+    details: Mapped[str] = mapped_column(Text, default="{}")
+    previous_event_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    event_hash: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    case: Mapped[Case] = relationship(back_populates="events")
+    actor: Mapped[User | None] = relationship()
 
 
 class Document(Base):

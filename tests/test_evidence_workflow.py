@@ -162,6 +162,45 @@ def test_upload_calculates_hash_and_stores_bytes(client: TestClient) -> None:
     assert detail["version_count"] == 1
 
 
+def test_case_custody_events_are_appended_and_chained(client: TestClient) -> None:
+    case_response = client.post(
+        "/v1/cases",
+        json={"case_number": "CASE-CUSTODY", "title": "Custody tracking test"},
+    )
+    assert case_response.status_code == 201
+    case_id = case_response.json()["id"]
+
+    first_event = client.post(
+        f"/v1/cases/{case_id}/events",
+        json={
+            "event_type": "acquisition",
+            "action": "Evidence received from source",
+            "details": {"source": "evidence locker", "device": "mobile-lab-01"},
+        },
+    )
+    assert first_event.status_code == 201
+    first_data = first_event.json()
+    assert first_data["previous_event_hash"] is None
+    assert first_data["event_hash"]
+
+    second_event = client.post(
+        f"/v1/cases/{case_id}/events",
+        json={
+            "event_type": "review",
+            "action": "Supervisor reviewed evidence",
+            "details": {"reviewer": "investigator-2"},
+        },
+    )
+    assert second_event.status_code == 201
+    second_data = second_event.json()
+    assert second_data["previous_event_hash"] == first_data["event_hash"]
+
+    events_response = client.get(f"/v1/cases/{case_id}/events")
+    assert events_response.status_code == 200
+    event_types = [item["event_type"] for item in events_response.json()]
+    assert event_types == ["acquisition", "review"]
+
+
 def test_unauthenticated_and_unauthorized_access_is_rejected(client: TestClient) -> None:
     unauthenticated = TestClient(app)
     response = unauthenticated.get("/v1/cases")

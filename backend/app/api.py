@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from . import models
 from .db import get_db
 from .auth import get_current_user
 from .models import User
@@ -12,6 +15,8 @@ from .schemas import (
     AccessGrantCreate,
     AccessGrantOut,
     CaseCreate,
+    CaseEventCreate,
+    CaseEventOut,
     CaseOut,
     DocumentCreate,
     DocumentDetailOut,
@@ -29,6 +34,7 @@ from .schemas import (
 )
 from .services import (
     AccessService,
+    CaseEventService,
     CaseService,
     ClassificationService,
     DocumentService,
@@ -72,6 +78,67 @@ def list_cases(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ) -> list[CaseOut]:
     return CaseService.list_for_user(db, current_user.id)
+
+
+@router.post("/cases/{case_id}/events", response_model=CaseEventOut, status_code=status.HTTP_201_CREATED)
+def create_case_event(
+    case_id: str,
+    payload: CaseEventCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CaseEventOut:
+    case = db.get(models.Case, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    try:
+        AccessService.require_case_access(db, current_user.id, case_id, "write")
+        event = CaseEventService.create(db, case_id, current_user.id, payload)
+        return CaseEventOut(
+            id=event.id,
+            case_id=event.case_id,
+            actor_user_id=event.actor_user_id,
+            event_type=event.event_type,
+            action=event.action,
+            details=json.loads(event.details) if event.details else {},
+            previous_event_hash=event.previous_event_hash,
+            event_hash=event.event_hash,
+            created_at=event.created_at,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to append case event") from exc
+
+
+@router.get("/cases/{case_id}/events", response_model=list[CaseEventOut])
+def list_case_events(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[CaseEventOut]:
+    case = db.get(models.Case, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    try:
+        AccessService.require_case_access(db, current_user.id, case_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    events = CaseEventService.list_for_case(db, case_id)
+    return [
+        CaseEventOut(
+            id=event.id,
+            case_id=event.case_id,
+            actor_user_id=event.actor_user_id,
+            event_type=event.event_type,
+            action=event.action,
+            details=json.loads(event.details) if event.details else {},
+            previous_event_hash=event.previous_event_hash,
+            event_hash=event.event_hash,
+            created_at=event.created_at,
+        )
+        for event in events
+    ]
 
 
 @router.post("/documents", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
