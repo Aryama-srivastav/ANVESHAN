@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from typing import BinaryIO
 from uuid import uuid4
@@ -84,6 +85,53 @@ class CaseService:
             .order_by(models.Case.created_at.desc())
         )
         return list(db.scalars(stmt).unique())
+
+
+class CaseEventService:
+    @staticmethod
+    def create(
+        db: Session,
+        case_id: str,
+        actor_user_id: str | None,
+        payload: schemas.CaseEventCreate,
+    ) -> models.CaseEvent:
+        previous_event = db.scalar(
+            select(models.CaseEvent)
+            .where(models.CaseEvent.case_id == case_id)
+            .order_by(models.CaseEvent.created_at.desc(), models.CaseEvent.id.desc())
+            .limit(1)
+        )
+        previous_hash = previous_event.event_hash if previous_event is not None else None
+        details_json = json.dumps(payload.details, sort_keys=True, separators=(",", ":"), default=str)
+        created_at = datetime.now(timezone.utc)
+        payload_block = (
+            f"{case_id}|{payload.event_type}|{payload.action}|{details_json}|{previous_hash or ''}|"
+            f"{actor_user_id or ''}|{created_at.isoformat()}"
+        )
+        event_hash = hashlib.sha256(payload_block.encode("utf-8")).hexdigest()
+        event = models.CaseEvent(
+            case_id=case_id,
+            actor_user_id=actor_user_id,
+            event_type=payload.event_type,
+            action=payload.action,
+            details=details_json,
+            previous_event_hash=previous_hash,
+            event_hash=event_hash,
+            created_at=created_at,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+        return event
+
+    @staticmethod
+    def list_for_case(db: Session, case_id: str) -> list[models.CaseEvent]:
+        stmt: Select[tuple[models.CaseEvent]] = (
+            select(models.CaseEvent)
+            .where(models.CaseEvent.case_id == case_id)
+            .order_by(models.CaseEvent.created_at.asc(), models.CaseEvent.id.asc())
+        )
+        return list(db.scalars(stmt))
 
 
 class DocumentService:

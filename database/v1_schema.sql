@@ -31,6 +31,18 @@ CREATE TABLE IF NOT EXISTS cases (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS case_events (
+    id UUID PRIMARY KEY,
+    case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    actor_user_id UUID REFERENCES users(id),
+    event_type VARCHAR(80) NOT NULL,
+    action VARCHAR(255) NOT NULL,
+    details TEXT NOT NULL DEFAULT '{}',
+    previous_event_hash VARCHAR(128),
+    event_hash VARCHAR(128) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY,
     case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
