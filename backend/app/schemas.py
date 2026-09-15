@@ -36,6 +36,26 @@ class CaseOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CaseEventCreate(BaseModel):
+    event_type: str
+    action: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class CaseEventOut(BaseModel):
+    id: str
+    case_id: str
+    actor_user_id: str | None
+    event_type: str
+    action: str
+    details: dict[str, Any]
+    previous_event_hash: str | None
+    event_hash: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class DocumentCreate(BaseModel):
     case_id: str
     title: str
