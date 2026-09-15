@@ -16,6 +16,7 @@ class UserOut(BaseModel):
     email: str
     full_name: str
     is_active: bool
+    mfa_enabled: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -105,6 +106,9 @@ class AccessGrantCreate(BaseModel):
     case_id: str | None = None
     document_id: str | None = None
     purpose: str
+    department: str | None = None
+    agency: str | None = None
+    sensitivity_level: str | None = None
     access_level: str = "read"
     valid_until: datetime | None = None
 
@@ -115,6 +119,9 @@ class AccessGrantOut(BaseModel):
     case_id: str | None
     document_id: str | None
     purpose: str
+    department: str | None = None
+    agency: str | None = None
+    sensitivity_level: str | None = None
     access_level: str
     valid_from: datetime
     valid_until: datetime | None

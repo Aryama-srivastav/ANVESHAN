@@ -6,12 +6,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api import router
-from .db import engine
+from .db import SessionLocal, engine
 from .models import Base
+from .services import RoleService
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        RoleService.ensure_default_roles(db)
+    finally:
+        db.close()
     yield
 
 

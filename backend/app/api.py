@@ -222,7 +222,7 @@ def upload_document_version(
             file.file,
             file.content_type,
             get_storage(),
-            created_by_user_id,
+            current_user.id,
             notes,
         )
     except LookupError as exc:

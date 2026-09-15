@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) UNIQUE NOT NULL,
     full_name VARCHAR(255) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -122,7 +123,56 @@ CREATE TABLE IF NOT EXISTS authorized_access (
     case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
     document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
     purpose VARCHAR(255) NOT NULL,
+    department VARCHAR(120),
+    agency VARCHAR(120),
+    sensitivity_level VARCHAR(30),
     access_level VARCHAR(50) NOT NULL DEFAULT 'read',
     valid_from TIMESTAMP NOT NULL DEFAULT NOW(),
     valid_until TIMESTAMP
 );
+
+-- PostgreSQL RLS scaffold for production enforcement.
+-- Set app.current_user_id on every transaction before accessing protected tables.
+-- ALTER TABLE cases ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE case_events ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE authorized_access ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY cases_case_access ON cases
+--     USING (
+--         current_user = 'anveshan_admin'
+--         OR EXISTS (
+--             SELECT 1 FROM authorized_access ga
+--             WHERE ga.case_id = cases.id
+--               AND ga.user_id = current_setting('app.current_user_id', true)::uuid
+--               AND ga.valid_from <= NOW()
+--               AND (ga.valid_until IS NULL OR ga.valid_until >= NOW())
+--         )
+--     );
+-- CREATE POLICY documents_case_access ON documents
+--     USING (
+--         current_user = 'anveshan_admin'
+--         OR EXISTS (
+--             SELECT 1 FROM authorized_access ga
+--             WHERE (ga.document_id = documents.id OR ga.case_id = documents.case_id)
+--               AND ga.user_id = current_setting('app.current_user_id', true)::uuid
+--               AND ga.valid_from <= NOW()
+--               AND (ga.valid_until IS NULL OR ga.valid_until >= NOW())
+--         )
+--     );
+-- CREATE POLICY case_events_case_access ON case_events
+--     USING (
+--         current_user = 'anveshan_admin'
+--         OR EXISTS (
+--             SELECT 1 FROM authorized_access ga
+--             WHERE ga.case_id = case_events.case_id
+--               AND ga.user_id = current_setting('app.current_user_id', true)::uuid
+--               AND ga.valid_from <= NOW()
+--               AND (ga.valid_until IS NULL OR ga.valid_until >= NOW())
+--         )
+--     )
+--     WITH CHECK (current_user = 'anveshan_admin');
+-- CREATE OR REPLACE FUNCTION prevent_case_event_mutation() RETURNS trigger
+-- LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'case events are append-only'; END; $$;
+-- CREATE TRIGGER case_events_append_only
+--     BEFORE UPDATE OR DELETE ON case_events
+--     FOR EACH ROW EXECUTE FUNCTION prevent_case_event_mutation();
