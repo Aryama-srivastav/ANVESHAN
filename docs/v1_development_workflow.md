@@ -1,4 +1,4 @@
-﻿# ANVESHAN V1 — Development Workflow
+# ANVESHAN V1 — Development Workflow
 
 > **Reference document**: maps each build step to database, backend, and frontend responsibilities with a
 > specific checkpoint that must pass before the next step begins.
@@ -60,14 +60,14 @@ Before building, here is what already exists and what is still needed:
 > NOTE: The DB schema is 100% complete in v1_schema.sql and models.py. The missing piece is a migration system.
 
 ### Database (database/)
-- [ ] Introduce Alembic for migration management
-- [ ] Convert v1_schema.sql into the initial Alembic migration (0001_initial.py)
-- [ ] Enable and test the RLS policies in v1_schema.sql (currently commented out)
-- [ ] Add a seed script for default roles (admin, user, auditor) and a bootstrap admin user
+- [x] Introduce Alembic for migration management
+- [x] Convert v1_schema.sql into the initial Alembic migration (0001_initial.py)
+- [x] Enable and test the RLS policies in v1_schema.sql (currently commented out)
+- [x] Add a seed script for default roles (admin, user, auditor) and a bootstrap admin user
 
 ### Backend (backend/)
-- [ ] Replace db.create_all() bootstrap with Alembic upgrade head invocation in startup
-- [ ] Expose GET /v1/health returning DB connection status
+- [x] Replace db.create_all() bootstrap with Alembic upgrade head invocation in startup
+- [x] Expose GET /v1/health returning DB connection status
 
 ### Checkpoint
 > Can we create a user, a case, and a document record through the API using a fresh database?
@@ -81,17 +81,17 @@ Before building, here is what already exists and what is still needed:
 > NOTE: JWT, TOTP-MFA, RBAC, and ABAC grant checks are already implemented. Missing: REQUIRE_MFA enforcement flag in production config and the frontend auth screens.
 
 ### Backend (backend/)
-- [ ] Set REQUIRE_MFA=true as default in the production environment template
-- [ ] Add GET /v1/users/me — returns current user info with role list
-- [ ] Add POST /v1/roles/{user_id}/assign — admin-only role assignment endpoint
-- [ ] Activate PostgreSQL RLS by default when DATABASE_URL is a PostgreSQL URI
+- [x] Set REQUIRE_MFA=true as default in the production environment template
+- [x] Add GET /v1/users/me — returns current user info with role list
+- [x] Add POST /v1/roles/{user_id}/assign — admin-only role assignment endpoint
+- [x] Activate PostgreSQL RLS by default when DATABASE_URL is a PostgreSQL URI
 
 ### Frontend (frontend/)
-- [ ] Login screen — email + password form, calls POST /v1/auth/login
-- [ ] MFA screen — TOTP code entry, calls POST /v1/auth/mfa/verify; shows QR setup if first time
-- [ ] Role-aware dashboard shell — sidebar and routes adapt based on JWT role claims
-- [ ] Admin panel — list users, assign roles, manage access grants
-- [ ] Authorized-access management screen — create/view purpose-bound grants
+- [x] Login screen — email + password form, calls POST /v1/auth/login
+- [x] MFA screen — TOTP code entry, calls POST /v1/auth/mfa/verify; shows QR setup if first time
+- [x] Role-aware dashboard shell — sidebar and routes adapt based on JWT role claims
+- [x] Admin panel — list users, assign roles, manage access grants
+- [x] Authorized-access management screen — create/view purpose-bound grants
 
 ### Checkpoint
 > Investigator logs in, enters TOTP, sees only their cases. Admin sees all. Auditor sees audit trail only.

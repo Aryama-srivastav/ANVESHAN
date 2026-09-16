@@ -28,6 +28,16 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class UserMeOut(UserOut):
+    """Extended user info returned by GET /v1/users/me — includes the role list."""
+    roles: list[str] = Field(default_factory=list)
+
+
+class RoleAssignRequest(BaseModel):
+    """Body for POST /v1/users/{user_id}/roles."""
+    role_name: str
+
+
 class PrototypeLoginRequest(BaseModel):
     role: str
     password: str
@@ -81,6 +91,11 @@ class CaseCreate(BaseModel):
     title: str
     description: str | None = None
 
+
+class CaseUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
 
 class CaseOut(BaseModel):
     id: str
