@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api import router
+from .auth import auth_router
 from .db import SessionLocal, engine
 from .models import Base
 from .services import RoleService
@@ -22,6 +23,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="ANVESHAN Backend API", version="v1", lifespan=lifespan)
+app.include_router(auth_router)
 app.include_router(router)
 
 
