@@ -21,6 +21,18 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PrototypeLoginRequest(BaseModel):
+    role: str
+    password: str
+
+
+class PrototypeLoginOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    user: UserOut
+
+
 class CaseCreate(BaseModel):
     case_number: str
     title: str
