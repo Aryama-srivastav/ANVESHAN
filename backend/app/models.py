@@ -45,6 +45,11 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    agency: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    clearance_level: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
     roles: Mapped[list[UserRole]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -156,6 +161,22 @@ class DocumentVersion(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     document: Mapped[Document] = relationship(back_populates="versions")
+    signatures: Mapped[list[DocumentSignature]] = relationship(back_populates="version", cascade="all, delete-orphan")
+
+
+class DocumentSignature(Base):
+    __tablename__ = "document_signatures"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    document_version_id: Mapped[str] = mapped_column(ForeignKey("document_versions.id", ondelete="CASCADE"), index=True)
+    signer_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    algorithm: Mapped[str] = mapped_column(String(80), default="RSA-PSS-SHA256")
+    signature: Mapped[str] = mapped_column(Text)
+    public_key_pem: Mapped[str] = mapped_column(Text)
+    signed_hash: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    version: Mapped[DocumentVersion] = relationship(back_populates="signatures")
 
 
 class ClassificationTag(Base):
@@ -246,3 +267,19 @@ class AuthorizedAccess(Base):
     user: Mapped[User] = relationship(back_populates="access_grants")
     case: Mapped[Case | None] = relationship(back_populates="access_grants")
     document: Mapped[Document | None] = relationship(back_populates="access_grants")
+
+
+class AuditLedgerRecord(Base):
+    __tablename__ = "audit_ledger_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    case_id: Mapped[str | None] = mapped_column(ForeignKey("cases.id", ondelete="SET NULL"), nullable=True, index=True)
+    document_id: Mapped[str | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True)
+    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
+    payload_hash: Mapped[str] = mapped_column(String(128), index=True)
+    previous_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    record_hash: Mapped[str] = mapped_column(String(128), unique=True)
+    ledger_provider: Mapped[str] = mapped_column(String(40))
+    transaction_id: Mapped[str] = mapped_column(String(255), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)

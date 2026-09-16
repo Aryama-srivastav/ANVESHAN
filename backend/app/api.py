@@ -26,9 +26,12 @@ from .schemas import (
     IdentityVerificationCreate,
     IntegrityVerifyOut,
     MessageOut,
+    MfaSetupOut,
     OriginalRecordCreate,
     TagCreate,
     TagOut,
+    SignatureOut,
+    SignatureVerifyOut,
     UserCreate,
     UserOut,
 )
@@ -42,22 +45,43 @@ from .services import (
     UserService,
 )
 from .storage import StorageError, get_storage
+from .signatures import SignatureService
+from .ledger import AuditLedger, LedgerError
 
 router = APIRouter(prefix="/v1", tags=["v1"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut:
+def create_user(payload: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> UserOut:
     try:
+        if not AccessService._is_admin(db, current_user.id):
+            raise PermissionError("Administrator role required")
         return UserService.create(db, payload)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="User already exists") from exc
 
 
 @router.get("/users", response_model=list[UserOut])
-def list_users(db: Session = Depends(get_db)) -> list[UserOut]:
+def list_users(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[UserOut]:
+    if not AccessService._is_admin(db, current_user.id):
+        raise HTTPException(status_code=403, detail="Administrator role required")
     return UserService.list(db)
+
+
+@router.get("/users/{user_id}/mfa-enrollment", response_model=MfaSetupOut)
+def get_mfa_enrollment(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> MfaSetupOut:
+    if not AccessService._is_admin(db, current_user.id):
+        raise HTTPException(status_code=403, detail="Administrator role required")
+    user = db.get(User, user_id)
+    if user is None or not user.mfa_secret:
+        raise HTTPException(status_code=404, detail="MFA enrollment is unavailable")
+    return MfaSetupOut(
+        secret=user.mfa_secret,
+        provisioning_uri=f"otpauth://totp/ANVESHAN:{user.email}?secret={user.mfa_secret}&issuer=ANVESHAN",
+    )
 
 
 @router.post("/cases", response_model=CaseOut, status_code=status.HTTP_201_CREATED)
@@ -109,6 +133,9 @@ def create_case_event(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to append case event") from exc
+    except LedgerError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/cases/{case_id}/events", response_model=list[CaseEventOut])
@@ -236,6 +263,9 @@ def upload_document_version(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to persist uploaded evidence") from exc
+    except LedgerError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post(
@@ -263,6 +293,45 @@ def verify_document_integrity(
     if result is None:
         raise HTTPException(status_code=404, detail="Document version not found")
     return result
+
+
+@router.post("/documents/{document_id}/versions/{version_id}/sign", response_model=SignatureOut, status_code=status.HTTP_201_CREATED)
+def sign_document_version(document_id: str, version_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> SignatureOut:
+    document = DocumentService.get(db, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        AccessService.require_document_access(db, current_user.id, document, "write")
+        version = DocumentService.get_version(db, document_id, version_id)
+        if version is None:
+            raise HTTPException(status_code=404, detail="Document version not found")
+        signature = SignatureService.sign(db, version, current_user.id)
+        AuditLedger.record(db, event_type="document_signed", actor_user_id=current_user.id, case_id=document.case_id,
+                           document_id=document.id, payload={"signature_id": signature.id, "version_id": version_id})
+        db.commit()
+        db.refresh(signature)
+        return signature
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LedgerError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/documents/{document_id}/versions/{version_id}/signatures/{signature_id}/verify", response_model=SignatureVerifyOut)
+def verify_signature(document_id: str, version_id: str, signature_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> SignatureVerifyOut:
+    document = DocumentService.get(db, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        AccessService.require_document_access(db, current_user.id, document)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    result = SignatureService.verify(db, signature_id)
+    if result is None or result[0].document_version_id != version_id:
+        raise HTTPException(status_code=404, detail="Signature not found")
+    signature, verified = result
+    return SignatureVerifyOut(signature_id=signature.id, verified=verified, signed_hash=signature.signed_hash)
 
 
 @router.get("/documents/{document_id}/versions/{version_id}/content")
@@ -316,9 +385,13 @@ def grant_access(
 
 
 @router.post("/tags", response_model=TagOut, status_code=status.HTTP_201_CREATED)
-def create_tag(payload: TagCreate, db: Session = Depends(get_db)) -> TagOut:
+def create_tag(payload: TagCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> TagOut:
     try:
+        if not AccessService._is_admin(db, current_user.id):
+            raise PermissionError("Administrator role required")
         return ClassificationService.create_tag(db, payload)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Tag already exists") from exc
@@ -370,10 +443,15 @@ def attach_original_record(
 def create_identity_verification(
     payload: IdentityVerificationCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> MessageOut:
     try:
+        if payload.user_id != current_user.id and not AccessService._is_admin(db, current_user.id):
+            raise PermissionError("Administrator role required to verify another user")
         record = RecordService.create_identity_verification(db, payload)
         return MessageOut(message="Identity verification record saved", data={"id": record.id})
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to save identity verification") from exc

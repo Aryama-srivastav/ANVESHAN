@@ -297,3 +297,28 @@ def test_unauthenticated_and_unauthorized_access_is_rejected(client: TestClient)
         headers={"Authorization": f"Bearer {outsider_token}"},
     )
     assert response.status_code == 403
+
+
+def test_encrypted_upload_can_be_signed_and_signature_verified(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SIGNING_KEY_PATH", str(tmp_path / "document-signing-key.pem"))
+    case = client.post("/v1/cases", json={"case_number": "CASE-SIGN", "title": "Signature test"}).json()
+    document = client.post(
+        "/v1/documents", json={"case_id": case["id"], "title": "Sealed exhibit", "doc_type": "report"}
+    ).json()
+    upload = client.post(
+        f"/v1/documents/{document['id']}/upload", files={"file": ("exhibit.txt", b"sealed evidence", "text/plain")}
+    )
+    assert upload.status_code == 201
+    version = upload.json()
+    encrypted_file = Path(os.environ["OBJECT_STORAGE_DIR"]) / version["storage_uri"].removeprefix("local://")
+    assert encrypted_file.read_bytes() != b"sealed evidence"
+
+    signed = client.post(f"/v1/documents/{document['id']}/versions/{version['id']}/sign")
+    assert signed.status_code == 201
+    verification = client.post(
+        f"/v1/documents/{document['id']}/versions/{version['id']}/signatures/{signed.json()['id']}/verify"
+    )
+    assert verification.status_code == 200
+    assert verification.json()["verified"] is True
