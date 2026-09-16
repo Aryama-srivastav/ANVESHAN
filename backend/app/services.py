@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import base64
+from secrets import token_bytes
 import json
 import os
 from typing import BinaryIO
@@ -12,7 +14,17 @@ from sqlalchemy import Select, exists, select
 from sqlalchemy.orm import Session
 
 from . import models, schemas
-from .storage import StorageProvider
+from .storage import StorageError, StorageProvider
+from .ledger import AuditLedger
+
+
+def _hash_password(password: str) -> str:
+    salt = token_bytes(16)
+    return base64.urlsafe_b64encode(salt + hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1)).decode()
+
+
+def _mfa_secret() -> str:
+    return base64.b32encode(token_bytes(20)).decode().rstrip("=")
 
 
 class _HashingReader:
@@ -35,7 +47,11 @@ class _HashingReader:
 class UserService:
     @staticmethod
     def create(db: Session, payload: schemas.UserCreate) -> models.User:
-        user = models.User(email=payload.email.lower(), full_name=payload.full_name)
+        user = models.User(
+            email=payload.email.lower(), full_name=payload.full_name, password_hash=_hash_password(payload.password),
+            department=payload.department, agency=payload.agency, clearance_level=payload.clearance_level,
+            mfa_enabled=True, mfa_secret=_mfa_secret(),
+        )
         db.add(user)
         db.flush()
         default_role = db.scalar(select(models.Role).where(models.Role.name == "user"))
@@ -140,6 +156,9 @@ class CaseEventService:
             created_at=created_at,
         )
         db.add(event)
+        db.flush()
+        AuditLedger.record(db, event_type="case_event", actor_user_id=actor_user_id, case_id=case_id,
+                           payload={"event_hash": event.event_hash, "event_type": event.event_type})
         db.commit()
         db.refresh(event)
         return event
@@ -232,6 +251,10 @@ class DocumentService:
                         immutable_hash=version.content_hash,
                     )
                 )
+            db.flush()
+            AuditLedger.record(db, event_type="document_version_uploaded", actor_user_id=created_by_user_id,
+                               case_id=document.case_id, document_id=document_id,
+                               payload={"version_id": version.id, "content_hash": version.content_hash})
             db.commit()
             db.refresh(version)
             return version
@@ -260,6 +283,11 @@ class DocumentService:
                     hasher.update(chunk)
         except FileNotFoundError as exc:
             raise LookupError("Stored evidence was not found") from exc
+        except StorageError:
+            return schemas.IntegrityVerifyOut(
+                document_id=document_id, version_id=version.id, version_number=version.version_number,
+                expected_hash=expected_hash, observed_hash="unreadable", verified=False,
+            )
         observed_hash = hasher.hexdigest()
         return schemas.IntegrityVerifyOut(
             document_id=document_id,
@@ -362,9 +390,10 @@ class AccessService:
             valid_until = grant.valid_until
             if valid_until is not None and valid_until.tzinfo is None:
                 valid_until = valid_until.replace(tzinfo=timezone.utc)
-            if department is not None and grant.department is not None and grant.department != department:
+            user = db.get(models.User, user_id)
+            if grant.department is not None and (user is None or grant.department != user.department):
                 continue
-            if agency is not None and grant.agency is not None and grant.agency != agency:
+            if grant.agency is not None and (user is None or grant.agency != user.agency):
                 continue
             if sensitivity_level is not None and grant.sensitivity_level is not None and grant.sensitivity_level != sensitivity_level:
                 continue

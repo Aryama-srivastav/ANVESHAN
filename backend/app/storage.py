@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import os
 import shutil
+import base64
+import hashlib
 from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class StorageError(RuntimeError):
@@ -20,6 +24,52 @@ class StorageProvider:
 
     def delete(self, uri: str) -> None:
         raise NotImplementedError
+
+
+class EncryptedStorage(StorageProvider):
+    """Envelope encryption wrapper; storage providers only ever receive ciphertext."""
+
+    _MAGIC = b"ANVESHAN-E1\x00"
+
+    def __init__(self, inner: StorageProvider, key: bytes) -> None:
+        if len(key) != 32:
+            raise StorageError("DOCUMENT_ENCRYPTION_KEY must decode to exactly 32 bytes")
+        self.inner = inner
+        self.cipher = AESGCM(key)
+
+    def put(self, key: str, source: BinaryIO, content_type: str | None) -> str:
+        plaintext = source.read()
+        nonce = os.urandom(12)
+        ciphertext = self._MAGIC + nonce + self.cipher.encrypt(nonce, plaintext, None)
+        return self.inner.put(key, BytesIO(ciphertext), "application/octet-stream")
+
+    def open(self, uri: str) -> BinaryIO:
+        encrypted = self.inner.open(uri).read()
+        if not encrypted.startswith(self._MAGIC) or len(encrypted) <= len(self._MAGIC) + 12:
+            raise StorageError("Stored evidence is not an ANVESHAN encrypted object")
+        nonce_start = len(self._MAGIC)
+        nonce = encrypted[nonce_start : nonce_start + 12]
+        try:
+            plaintext = self.cipher.decrypt(nonce, encrypted[nonce_start + 12 :], None)
+        except Exception as exc:
+            raise StorageError("Stored evidence could not be decrypted") from exc
+        return BytesIO(plaintext)
+
+    def delete(self, uri: str) -> None:
+        self.inner.delete(uri)
+
+
+def _encryption_key() -> bytes:
+    configured = os.getenv("DOCUMENT_ENCRYPTION_KEY")
+    if configured:
+        try:
+            return base64.urlsafe_b64decode(configured + "=" * (-len(configured) % 4))
+        except Exception as exc:
+            raise StorageError("DOCUMENT_ENCRYPTION_KEY must be URL-safe base64") from exc
+    # Local development fallback. Production requires a separately managed key.
+    if os.getenv("APP_ENV", "development").lower() == "production":
+        raise StorageError("DOCUMENT_ENCRYPTION_KEY is required in production")
+    return hashlib.sha256(os.getenv("APP_SECRET_KEY", "anveshan-local-development-key").encode()).digest()
 
 
 class LocalStorage(StorageProvider):
@@ -89,12 +139,18 @@ class SupabaseStorage(StorageProvider):
 def get_storage() -> StorageProvider:
     provider = os.getenv("OBJECT_STORAGE_PROVIDER", "local").lower()
     if provider == "local":
-        return LocalStorage(os.getenv("OBJECT_STORAGE_DIR", "backend/uploads"))
-    if provider == "supabase":
+        storage: StorageProvider = LocalStorage(os.getenv("OBJECT_STORAGE_DIR", "backend/uploads"))
+    elif provider == "supabase":
         url = os.getenv("SUPABASE_URL")
         service_key = os.getenv("SUPABASE_SERVICE_KEY")
         bucket = os.getenv("SUPABASE_STORAGE_BUCKET", "anveshan-evidence")
         if not url or not service_key:
             raise StorageError("SUPABASE_URL and SUPABASE_SERVICE_KEY are required")
-        return SupabaseStorage(url, service_key, bucket)
-    raise StorageError(f"Unsupported object storage provider: {provider}")
+        storage = SupabaseStorage(url, service_key, bucket)
+    else:
+        raise StorageError(f"Unsupported object storage provider: {provider}")
+    if os.getenv("DOCUMENT_ENCRYPTION_ENABLED", "true").lower() not in {"1", "true", "yes", "on"}:
+        if os.getenv("APP_ENV", "development").lower() == "production":
+            raise StorageError("Document encryption cannot be disabled in production")
+        return storage
+    return EncryptedStorage(storage, _encryption_key())

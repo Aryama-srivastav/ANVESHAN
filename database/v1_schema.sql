@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS users (
     full_name VARCHAR(255) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    password_hash VARCHAR(255),
+    mfa_secret VARCHAR(64),
+    department VARCHAR(120),
+    agency VARCHAR(120),
+    clearance_level VARCHAR(30),
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -75,6 +80,17 @@ CREATE TABLE IF NOT EXISTS document_versions (
     CONSTRAINT uq_document_version_number UNIQUE (document_id, version_number)
 );
 
+CREATE TABLE IF NOT EXISTS document_signatures (
+    id UUID PRIMARY KEY,
+    document_version_id UUID NOT NULL REFERENCES document_versions(id) ON DELETE CASCADE,
+    signer_user_id UUID REFERENCES users(id),
+    algorithm VARCHAR(80) NOT NULL DEFAULT 'RSA-PSS-SHA256',
+    signature TEXT NOT NULL,
+    public_key_pem TEXT NOT NULL,
+    signed_hash VARCHAR(128) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS classification_tags (
     id UUID PRIMARY KEY,
     name VARCHAR(100) UNIQUE NOT NULL,
@@ -129,6 +145,20 @@ CREATE TABLE IF NOT EXISTS authorized_access (
     access_level VARCHAR(50) NOT NULL DEFAULT 'read',
     valid_from TIMESTAMP NOT NULL DEFAULT NOW(),
     valid_until TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS audit_ledger_records (
+    id UUID PRIMARY KEY,
+    case_id UUID REFERENCES cases(id) ON DELETE SET NULL,
+    document_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+    actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    event_type VARCHAR(80) NOT NULL,
+    payload_hash VARCHAR(128) NOT NULL,
+    previous_hash VARCHAR(128),
+    record_hash VARCHAR(128) UNIQUE NOT NULL,
+    ledger_provider VARCHAR(40) NOT NULL,
+    transaction_id VARCHAR(255) UNIQUE NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- PostgreSQL RLS scaffold for production enforcement.

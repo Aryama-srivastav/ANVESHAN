@@ -32,6 +32,30 @@ button { cursor: pointer; }
 .prototype-logins > div { display: flex; gap: 7px; }
 .prototype-logins button { border: 1px solid #dfe4dc; background: #f7f7f0; color: var(--sage-strong); border-radius: 5px; padding: 8px 10px; font-size: 10px; font-weight: 700; }
 .prototype-logins button:hover { border-color: var(--sage-strong); background: var(--sage); }
+.prototype-logins button:disabled, .primary-button:disabled { cursor: wait; opacity: .6; transform: none; }
+.auth-error { max-width: 410px; color: var(--coral-strong); background: var(--coral); border: 1px solid #ebc4ba; border-radius: 6px; padding: 9px 11px; font-size: 11px; margin: 13px 0 0; }
+.fingerprint-scan { position: relative; overflow: hidden; }
+.fingerprint-scan::after { content: ""; position: absolute; inset: -40% 0 auto; height: 42%; background: linear-gradient(transparent, rgba(255,255,255,.95), transparent); opacity: 0; }
+.fingerprint-scan.is-scanning::after { opacity: 1; animation: fingerprint-sweep .75s ease-in-out infinite; }
+@keyframes fingerprint-sweep { to { transform: translateY(240%); } }
+.notification-wrap { position: relative; }
+.notification-popover { position: absolute; right: 0; top: 44px; z-index: 30; width: 280px; padding: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 14px 35px rgba(42, 48, 42, .16); }
+.notification-popover > strong { display: block; margin-bottom: 7px; }
+.notification-popover button, .review-row { display: flex; width: 100%; gap: 10px; align-items: center; border: 0; border-top: 1px solid var(--line); background: transparent; padding: 10px 3px; text-align: left; color: inherit; }
+.notification-popover button small, .review-row span { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
+.review-queue { display: grid; gap: 3px; }
+.review-row { cursor: pointer; }
+.review-row > div:nth-child(2) { flex: 1; }
+.interactive-row, .case-row { cursor: pointer; }
+.interactive-row:hover, .case-row:hover { background: rgba(211, 226, 210, .35); }
+.grant-tools { display: flex; gap: 8px; align-items: center; }
+.grant-tools .search-box { min-width: 190px; }
+.detail-stack { display: grid; gap: 13px; }
+.detail-stack h3 { margin: 0; font-size: 22px; }
+.detail-stack p { color: var(--muted); margin: 0; line-height: 1.55; }
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.detail-grid span { border: 1px solid var(--line); border-radius: 7px; padding: 10px; color: var(--muted); font-size: 11px; }
+.detail-grid strong { display: block; color: var(--ink); margin-top: 4px; }
 @media (max-width: 600px) { .auth-shell .auth-panel { padding: 52px 24px 28px; }.prototype-logins > div { flex-wrap: wrap; } }
 
 /* Premium case-file motion and material details */

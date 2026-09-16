@@ -9,6 +9,10 @@ from pydantic import BaseModel, EmailStr, Field
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
+    password: str = Field(min_length=12)
+    department: str | None = None
+    agency: str | None = None
+    clearance_level: str | None = None
 
 
 class UserOut(BaseModel):
@@ -17,6 +21,9 @@ class UserOut(BaseModel):
     full_name: str
     is_active: bool
     mfa_enabled: bool = False
+    department: str | None = None
+    agency: str | None = None
+    clearance_level: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -31,6 +38,42 @@ class PrototypeLoginOut(BaseModel):
     token_type: str = "bearer"
     role: str
     user: UserOut
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class LoginChallengeOut(BaseModel):
+    mfa_required: bool
+    challenge_token: str | None = None
+    access_token: str | None = None
+    token_type: str = "bearer"
+
+
+class MfaVerifyRequest(BaseModel):
+    challenge_token: str
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetRequestOut(BaseModel):
+    message: str
+    development_reset_token: str | None = None
+
+
+class PasswordResetConfirm(BaseModel):
+    reset_token: str
+    new_password: str = Field(min_length=12)
+
+
+class MfaSetupOut(BaseModel):
+    secret: str
+    provisioning_uri: str
 
 
 class CaseCreate(BaseModel):
@@ -111,6 +154,23 @@ class IntegrityVerifyOut(BaseModel):
     expected_hash: str
     observed_hash: str
     verified: bool
+
+
+class SignatureOut(BaseModel):
+    id: str
+    document_version_id: str
+    signer_user_id: str | None
+    algorithm: str
+    signed_hash: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SignatureVerifyOut(BaseModel):
+    signature_id: str
+    verified: bool
+    signed_hash: str
 
 
 class AccessGrantCreate(BaseModel):
