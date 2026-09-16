@@ -253,6 +253,17 @@ def test_default_roles_and_abac_metadata_are_available(client: TestClient) -> No
     assert grant["sensitivity_level"] == "restricted"
 
 
+def test_prototype_login_supports_all_default_roles(client: TestClient) -> None:
+    for role, password in (("investigator", "investigator"), ("auditor", "auditor"), ("admin", "admin")):
+        response = client.post(
+            "/v1/auth/prototype-login",
+            json={"role": role, "password": password},
+        )
+        assert response.status_code == 200
+        assert response.json()["role"] == role
+        assert response.json()["access_token"]
+
+
 def test_unauthenticated_and_unauthorized_access_is_rejected(client: TestClient) -> None:
     unauthenticated = TestClient(app)
     response = unauthenticated.get("/v1/cases")
