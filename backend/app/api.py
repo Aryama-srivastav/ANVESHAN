@@ -166,6 +166,46 @@ def get_case(
     return case
 
 
+@router.put("/cases/{case_id}", response_model=CaseOut)
+def update_case(
+    case_id: str,
+    payload: CaseUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CaseOut:
+    case = db.get(models.Case, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    try:
+        AccessService.require_case_access(db, current_user.id, case_id, required_level="write")
+        
+        updates_made = False
+        if payload.title is not None and payload.title != case.title:
+            case.title = payload.title
+            updates_made = True
+        if payload.description is not None and payload.description != case.description:
+            case.description = payload.description
+            updates_made = True
+        if payload.status is not None and payload.status != case.status:
+            case.status = payload.status
+            updates_made = True
+            
+        if updates_made:
+            db.commit()
+            db.refresh(case)
+            # Log the edit/status change
+            event = CaseEventCreate(
+                event_type="case_updated",
+                action=f"Case updated. Status: {case.status}",
+                details={"title": case.title, "status": case.status}
+            )
+            CaseEventService.create(db, case_id, current_user.id, event)
+            
+        return case
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
 @router.get("/cases/{case_id}/documents", response_model=list[DocumentOut])
 def list_case_documents(
     case_id: str,
