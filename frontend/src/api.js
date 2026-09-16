@@ -39,6 +39,7 @@ export const api = {
   listCases: () => apiRequest("/v1/cases"),
   getCase: (caseId) => apiRequest(`/v1/cases/${caseId}`),
   createCase: (payload) => apiRequest("/v1/cases", { method: "POST", body: JSON.stringify(payload) }),
+  updateCase: (caseId, payload) => apiRequest(`/v1/cases/${caseId}`, { method: "PUT", body: JSON.stringify(payload) }),
   getCaseDocuments: (caseId) => apiRequest(`/v1/cases/${caseId}/documents`),
   getCaseAuditTrail: (caseId) => apiRequest(`/v1/cases/${caseId}/audit-trail`),
   getCaseEvents: (caseId) => apiRequest(`/v1/cases/${caseId}/events`),

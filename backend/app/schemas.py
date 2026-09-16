@@ -92,6 +92,11 @@ class CaseCreate(BaseModel):
     description: str | None = None
 
 
+class CaseUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+
 class CaseOut(BaseModel):
     id: str
     case_number: str
