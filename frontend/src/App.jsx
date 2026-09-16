@@ -63,27 +63,41 @@ function App() {
   const [grantSearch, setGrantSearch] = useState("");
   const [grantStatus, setGrantStatus] = useState("All");
 
+  const [currentUser, setCurrentUser] = useState(null);
+
   useEffect(() => {
     if (stage !== "app") return;
-    api.listCases().then((remoteCases) => {
-      setCases(remoteCases.map((item) => ({
-        id: item.id,
-        number: item.case_number,
-        title: item.title,
-        status: item.status === "open" ? "Active" : item.status,
-        evidence: 0,
-        updated: "Just now",
-        signal: "Archive loaded from API",
-      })));
-    }).catch(() => {
-      notify("Showing local prototype cases");
-    });
+    
+    async function loadData() {
+      try {
+        const user = await api.getUserMe();
+        setCurrentUser(user);
+        // Map backend roles to frontend roles, fallback to investigator
+        const backendRole = user.roles && user.roles.length > 0 ? user.roles[0] : "investigator";
+        setRole(backendRole);
+        localStorage.setItem("anveshan_user_id", user.id);
+        
+        const remoteCases = await api.listCases();
+        setCases(remoteCases.map((item) => ({
+          id: item.id,
+          number: item.case_number,
+          title: item.title,
+          status: item.status === "open" ? "Active" : item.status,
+          evidence: 0,
+          updated: "Just now",
+          signal: "Archive loaded from API",
+        })));
+      } catch (err) {
+        notify("Unable to load data from backend, falling back to local prototype");
+      }
+    }
+    loadData();
   }, [stage]);
 
-  if (stage === "login") return <Login onContinue={(selectedRole) => { setRole(selectedRole); setStage("app"); }} onMfa={(challenge) => { setMfaChallenge(challenge); setStage("mfa"); }} onReset={() => setModal("reset")} />;
+  if (stage === "login") return <Login onContinue={() => { setStage("app"); }} onMfa={(challenge) => { setMfaChallenge(challenge); setStage("mfa"); }} onReset={() => setModal("reset")} />;
   if (stage === "mfa") return <Mfa challenge={mfaChallenge} onVerified={() => setStage("app")} onBack={() => { setMfaChallenge(null); setStage("login"); }} />;
 
-  const currentRole = roles[role];
+  const currentRole = roles[role] || roles["investigator"];
   const canAdmin = role === "admin";
   const filteredCases = cases.filter((item) => `${item.number} ${item.title}`.toLowerCase().includes(search.toLowerCase()) && (caseStatus === "All" || item.status === caseStatus));
 
@@ -93,15 +107,10 @@ function App() {
   }
 
   async function switchRole(nextRole) {
-    try {
-      const result = await api.prototypeLogin(nextRole, nextRole);
-      localStorage.setItem("anveshan_token", result.access_token);
-      localStorage.setItem("anveshan_user_id", result.user.id);
-      setRole(nextRole);
-      setActiveView("overview");
-    } catch {
-      notify("Unable to switch prototype role");
-    }
+    // In production, switching roles requires a new token, but for prototype we just update the UI state
+    // We will leave the token alone and just update the UI role to simulate it.
+    setRole(nextRole);
+    setActiveView("overview");
   }
 
   async function createCase(event) {
@@ -186,7 +195,7 @@ function App() {
   );
 }
 
-function Login({ onContinue, onMfa, onReset }) { const [error, setError] = useState(""); const [loading, setLoading] = useState(false); async function demoLogin(role) { setLoading(true); try { const result = await api.prototypeLogin(role, role); localStorage.setItem("anveshan_token", result.access_token); localStorage.setItem("anveshan_user_id", result.user.id); onContinue(role); } catch { setError("Prototype login is unavailable. Start the backend on port 8000."); } finally { setLoading(false); } } async function login(event) { event.preventDefault(); setError(""); setLoading(true); const form = new FormData(event.currentTarget); try { const result = await api.login(form.get("email"), form.get("password")); if (result.mfa_required) onMfa(result.challenge_token); else { localStorage.setItem("anveshan_token", result.access_token); onContinue("investigator"); } } catch { setError("Unable to verify your credentials."); } finally { setLoading(false); } } return <div className="auth-shell"><PrototypeBanner /><div className="auth-panel"><div className="auth-brand"><div className="brand-mark">A</div><div><strong>ANVESHAN</strong><span>Evidence intelligence platform</span></div></div><div className="auth-intro"><div className="eyebrow">Secure investigator access</div><h1>Enter the evidence workspace.</h1><p>Review case archives, trace custody, and manage authorized access from one protected session.</p></div><form className="auth-form" onSubmit={login}><label>Agency email<input name="email" type="email" required /></label><label>Password<div className="password-input"><input name="password" type="password" required /><Fingerprint size={18} /></div></label><div className="auth-row"><label className="check-label"><input type="checkbox" defaultChecked /> Remember this device</label><button type="button" className="text-button" onClick={onReset}>Reset password</button></div><button className="primary-button auth-submit" type="submit" disabled={loading}>{loading ? "Connecting..." : "Continue"} {!loading && <ArrowUpRight size={17} />}</button></form><div className="prototype-logins"><span>Demo identities bypass MFA</span><div><button type="button" onClick={() => demoLogin("investigator")} disabled={loading}>Investigator</button><button type="button" onClick={() => demoLogin("auditor")} disabled={loading}>Auditor</button><button type="button" onClick={() => demoLogin("admin")} disabled={loading}>Administrator</button></div></div>{error && <p className="auth-error">{error}</p>}<div className="auth-foot"><span><LockKeyhole size={14} /> End-to-end protected</span><span>Local preview</span></div></div><div className="auth-aside"><div className="aside-grid" /><div className="aside-copy"><span className="aside-kicker">Chain of custody</span><h2>Every record has a history.</h2><p>Immutable originals. Traceable handling. Access shaped by purpose.</p></div><div className="aside-stamp"><BadgeCheck size={18} /><span>Integrity first<br /><strong>V1 workspace</strong></span></div></div></div> }
+function Login({ onContinue, onMfa, onReset }) { const [error, setError] = useState(""); const [loading, setLoading] = useState(false); async function demoLogin(role) { setLoading(true); try { const result = await api.prototypeLogin(role, role); localStorage.setItem("anveshan_token", result.access_token); localStorage.setItem("anveshan_user_id", result.user.id); onContinue(); } catch { setError("Prototype login is unavailable. Start the backend on port 8000."); } finally { setLoading(false); } } async function login(event) { event.preventDefault(); setError(""); setLoading(true); const form = new FormData(event.currentTarget); try { const result = await api.login(form.get("email"), form.get("password")); if (result.mfa_required) onMfa(result.challenge_token); else { localStorage.setItem("anveshan_token", result.access_token); onContinue(); } } catch { setError("Unable to verify your credentials."); } finally { setLoading(false); } } return <div className="auth-shell"><PrototypeBanner /><div className="auth-panel"><div className="auth-brand"><div className="brand-mark">A</div><div><strong>ANVESHAN</strong><span>Evidence intelligence platform</span></div></div><div className="auth-intro"><div className="eyebrow">Secure investigator access</div><h1>Enter the evidence workspace.</h1><p>Review case archives, trace custody, and manage authorized access from one protected session.</p></div><form className="auth-form" onSubmit={login}><label>Agency email<input name="email" type="email" required /></label><label>Password<div className="password-input"><input name="password" type="password" required /><Fingerprint size={18} /></div></label><div className="auth-row"><label className="check-label"><input type="checkbox" defaultChecked /> Remember this device</label><button type="button" className="text-button" onClick={onReset}>Reset password</button></div><button className="primary-button auth-submit" type="submit" disabled={loading}>{loading ? "Connecting..." : "Continue"} {!loading && <ArrowUpRight size={17} />}</button></form><div className="prototype-logins"><span>Demo identities bypass MFA</span><div><button type="button" onClick={() => demoLogin("investigator")} disabled={loading}>Investigator</button><button type="button" onClick={() => demoLogin("auditor")} disabled={loading}>Auditor</button><button type="button" onClick={() => demoLogin("admin")} disabled={loading}>Administrator</button></div></div>{error && <p className="auth-error">{error}</p>}<div className="auth-foot"><span><LockKeyhole size={14} /> End-to-end protected</span><span>Local preview</span></div></div><div className="auth-aside"><div className="aside-grid" /><div className="aside-copy"><span className="aside-kicker">Chain of custody</span><h2>Every record has a history.</h2><p>Immutable originals. Traceable handling. Access shaped by purpose.</p></div><div className="aside-stamp"><BadgeCheck size={18} /><span>Integrity first<br /><strong>V1 workspace</strong></span></div></div></div> }
 
 function Mfa({ challenge, onVerified, onBack }) { const [code, setCode] = useState(""); const [error, setError] = useState(""); const [verifying, setVerifying] = useState(false); async function verify(event) { event.preventDefault(); setVerifying(true); setError(""); try { const result = await api.verifyMfa(challenge, code); localStorage.setItem("anveshan_token", result.access_token); onVerified(); } catch { setError("That authentication code could not be verified."); } finally { setVerifying(false); } } return <div className="auth-shell"><PrototypeBanner /><div className="auth-panel mfa-panel"><button className="back-button" onClick={onBack}>Back to sign in</button><div className={`mfa-icon fingerprint-scan ${verifying ? "is-scanning" : ""}`}><Fingerprint size={25} /></div><div className="auth-intro"><div className="eyebrow">Step 2 of 2</div><h1>Verify your session.</h1><p>Enter the six-digit code from your registered authenticator to continue.</p></div><form className="auth-form" onSubmit={verify}><label>Authentication code<input className="code-input" inputMode="numeric" placeholder="000 000" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} autoFocus required /></label><button className="primary-button auth-submit" type="submit" disabled={verifying}>{verifying ? "Verifying signature..." : "Verify identity"} <ArrowUpRight size={17} /></button></form>{error && <p className="auth-error">{error}</p>}<div className="mfa-help"><span>Having trouble?</span><button className="text-button">Use a recovery code</button></div></div><div className="auth-aside mfa-aside"><div className="aside-grid" /><div className="aside-copy"><span className="aside-kicker">MFA required</span><h2>A quiet second check.</h2><p>Protected case access requires a verified identity and an active session.</p></div><div className="aside-stamp"><ShieldCheck size={18} /><span>Session status<br /><strong>{verifying ? "Verifying" : "Awaiting code"}</strong></span></div></div></div> }
 
