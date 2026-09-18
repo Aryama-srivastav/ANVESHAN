@@ -98,6 +98,9 @@ class UserService:
 class RoleService:
     @staticmethod
     def ensure_default_roles(db: Session) -> None:
+        import logging
+        log = logging.getLogger("anveshan.services")
+        log.info("RoleService: ensuring default roles exist")
         for name, description in {
             "user": "Standard investigator",
             "admin": "Case and system administrator",
@@ -105,8 +108,12 @@ class RoleService:
             "viewer": "Read-only case viewer",
         }.items():
             if db.scalar(select(models.Role).where(models.Role.name == name)) is None:
+                log.info("RoleService: creating role '%s'", name)
                 db.add(models.Role(name=name, description=description))
+            else:
+                log.debug("RoleService: role '%s' already exists", name)
         db.commit()
+        log.info("RoleService: default roles check complete")
 
 
 class CaseService:

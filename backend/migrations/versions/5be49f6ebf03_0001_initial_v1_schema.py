@@ -31,7 +31,7 @@ def upgrade() -> None:
     op.create_table(
         "roles",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("name", sa.String(80), nullable=False, unique=True),
+        sa.Column("name", sa.String(80), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
     )
     op.create_index("ix_roles_name", "roles", ["name"], unique=True)
@@ -42,15 +42,15 @@ def upgrade() -> None:
     op.create_table(
         "users",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("email", sa.String(255), nullable=False, unique=True),
+        sa.Column("email", sa.String(255), nullable=False),
         sa.Column("full_name", sa.String(255), nullable=False),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="1"),
         sa.Column("mfa_enabled", sa.Boolean, nullable=False, server_default="0"),
         sa.Column("password_hash", sa.String(255), nullable=True),
         sa.Column("mfa_secret", sa.String(64), nullable=True),
-        sa.Column("department", sa.String(120), nullable=True),
-        sa.Column("agency", sa.String(120), nullable=True),
-        sa.Column("clearance_level", sa.String(30), nullable=True),
+        sa.Column("department", sa.String(120), nullable=True, index=True),
+        sa.Column("agency", sa.String(120), nullable=True, index=True),
+        sa.Column("clearance_level", sa.String(30), nullable=True, index=True),
         sa.Column(
             "created_at",
             sa.DateTime,
@@ -59,9 +59,6 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_users_email", "users", ["email"], unique=True)
-    op.create_index("ix_users_department", "users", ["department"])
-    op.create_index("ix_users_agency", "users", ["agency"])
-    op.create_index("ix_users_clearance_level", "users", ["clearance_level"])
 
     # ------------------------------------------------------------------
     # user_roles
@@ -74,12 +71,14 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column(
             "role_id",
             sa.String(36),
             sa.ForeignKey("roles.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column(
             "granted_at",
@@ -89,8 +88,6 @@ def upgrade() -> None:
         ),
         sa.UniqueConstraint("user_id", "role_id", name="uq_user_role"),
     )
-    op.create_index("ix_user_roles_user_id", "user_roles", ["user_id"])
-    op.create_index("ix_user_roles_role_id", "user_roles", ["role_id"])
 
     # ------------------------------------------------------------------
     # cases
@@ -98,7 +95,7 @@ def upgrade() -> None:
     op.create_table(
         "cases",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("case_number", sa.String(100), nullable=False, unique=True),
+        sa.Column("case_number", sa.String(100), nullable=False),
         sa.Column("title", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("status", sa.String(50), nullable=False, server_default="open"),
@@ -122,18 +119,20 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("cases.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column(
             "actor_user_id",
             sa.String(36),
             sa.ForeignKey("users.id"),
             nullable=True,
+            index=True,
         ),
-        sa.Column("event_type", sa.String(80), nullable=False),
+        sa.Column("event_type", sa.String(80), nullable=False, index=True),
         sa.Column("action", sa.String(255), nullable=False),
         sa.Column("details", sa.Text, nullable=False, server_default="{}"),
-        sa.Column("previous_event_hash", sa.String(128), nullable=True),
-        sa.Column("event_hash", sa.String(128), nullable=False),
+        sa.Column("previous_event_hash", sa.String(128), nullable=True, index=True),
+        sa.Column("event_hash", sa.String(128), nullable=False, index=True),
         sa.Column(
             "created_at",
             sa.DateTime,
@@ -141,11 +140,6 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
     )
-    op.create_index("ix_case_events_case_id", "case_events", ["case_id"])
-    op.create_index("ix_case_events_event_type", "case_events", ["event_type"])
-    op.create_index("ix_case_events_actor_user_id", "case_events", ["actor_user_id"])
-    op.create_index("ix_case_events_previous_event_hash", "case_events", ["previous_event_hash"])
-    op.create_index("ix_case_events_event_hash", "case_events", ["event_hash"])
 
     # ------------------------------------------------------------------
     # documents
@@ -158,9 +152,10 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("cases.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column("title", sa.String(255), nullable=False),
-        sa.Column("doc_type", sa.String(80), nullable=False),
+        sa.Column("doc_type", sa.String(80), nullable=False, index=True),
         sa.Column("sensitivity_level", sa.String(30), nullable=False, server_default="restricted"),
         sa.Column("status", sa.String(30), nullable=False, server_default="active"),
         sa.Column(
@@ -168,6 +163,7 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("users.id"),
             nullable=True,
+            index=True,
         ),
         sa.Column(
             "created_at",
@@ -176,8 +172,6 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
     )
-    op.create_index("ix_documents_case_id", "documents", ["case_id"])
-    op.create_index("ix_documents_doc_type", "documents", ["doc_type"])
 
     # ------------------------------------------------------------------
     # document_metadata
@@ -190,12 +184,12 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("documents.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column("meta_key", sa.String(120), nullable=False),
         sa.Column("meta_value", sa.Text, nullable=False),
         sa.UniqueConstraint("document_id", "meta_key", name="uq_document_meta_key"),
     )
-    op.create_index("ix_document_metadata_document_id", "document_metadata", ["document_id"])
 
     # ------------------------------------------------------------------
     # document_versions
@@ -208,10 +202,11 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("documents.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column("version_number", sa.Integer, nullable=False),
         sa.Column("storage_uri", sa.String(500), nullable=False),
-        sa.Column("content_hash", sa.String(128), nullable=False),
+        sa.Column("content_hash", sa.String(128), nullable=False, index=True),
         sa.Column(
             "created_by_user_id",
             sa.String(36),
@@ -227,8 +222,6 @@ def upgrade() -> None:
         sa.Column("notes", sa.Text, nullable=True),
         sa.UniqueConstraint("document_id", "version_number", name="uq_document_version_number"),
     )
-    op.create_index("ix_document_versions_document_id", "document_versions", ["document_id"])
-    op.create_index("ix_document_versions_content_hash", "document_versions", ["content_hash"])
 
     # ------------------------------------------------------------------
     # document_signatures
@@ -241,6 +234,7 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("document_versions.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column(
             "signer_user_id",
@@ -251,7 +245,7 @@ def upgrade() -> None:
         sa.Column("algorithm", sa.String(80), nullable=False, server_default="RSA-PSS-SHA256"),
         sa.Column("signature", sa.Text, nullable=False),
         sa.Column("public_key_pem", sa.Text, nullable=False),
-        sa.Column("signed_hash", sa.String(128), nullable=False),
+        sa.Column("signed_hash", sa.String(128), nullable=False, index=True),
         sa.Column(
             "created_at",
             sa.DateTime,
@@ -259,8 +253,6 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
     )
-    op.create_index("ix_document_signatures_document_version_id", "document_signatures", ["document_version_id"])
-    op.create_index("ix_document_signatures_signed_hash", "document_signatures", ["signed_hash"])
 
     # ------------------------------------------------------------------
     # classification_tags
@@ -268,7 +260,7 @@ def upgrade() -> None:
     op.create_table(
         "classification_tags",
         sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("name", sa.String(100), nullable=False, unique=True),
+        sa.Column("name", sa.String(100), nullable=False),
         sa.Column("category", sa.String(100), nullable=True),
     )
     op.create_index("ix_classification_tags_name", "classification_tags", ["name"], unique=True)
@@ -284,17 +276,17 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("documents.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column(
             "tag_id",
             sa.String(36),
             sa.ForeignKey("classification_tags.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.UniqueConstraint("document_id", "tag_id", name="uq_document_tag"),
     )
-    op.create_index("ix_document_tags_document_id", "document_tags", ["document_id"])
-    op.create_index("ix_document_tags_tag_id", "document_tags", ["tag_id"])
 
     # ------------------------------------------------------------------
     # original_document_records
@@ -314,7 +306,6 @@ def upgrade() -> None:
         sa.Column("acquired_at", sa.DateTime, nullable=True),
         sa.Column("immutable_hash", sa.String(128), nullable=True),
     )
-    op.create_index("ix_original_document_records_document_id", "original_document_records", ["document_id"], unique=True)
 
     # ------------------------------------------------------------------
     # identity_verification_records
@@ -327,6 +318,7 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column("verification_method", sa.String(80), nullable=False),
         sa.Column("verifier", sa.String(255), nullable=False),
@@ -334,7 +326,6 @@ def upgrade() -> None:
         sa.Column("verified_at", sa.DateTime, nullable=True),
         sa.Column("notes", sa.Text, nullable=True),
     )
-    op.create_index("ix_identity_verification_records_user_id", "identity_verification_records", ["user_id"])
 
     # ------------------------------------------------------------------
     # external_record_references
@@ -347,14 +338,21 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("cases.id", ondelete="CASCADE"),
             nullable=True,
+            index=True,
         ),
         sa.Column(
             "document_id",
             sa.String(36),
             sa.ForeignKey("documents.id", ondelete="CASCADE"),
             nullable=True,
+            index=True,
         ),
-        sa.Column("source_system", sa.String(120), nullable=False),
+        sa.Column(
+            "source_system",
+            sa.String(120),
+            nullable=False,
+            index=True,
+        ),
         sa.Column("external_record_id", sa.String(255), nullable=False),
         sa.Column("record_url", sa.String(500), nullable=True),
         sa.Column(
@@ -364,9 +362,6 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
     )
-    op.create_index("ix_external_record_references_case_id", "external_record_references", ["case_id"])
-    op.create_index("ix_external_record_references_document_id", "external_record_references", ["document_id"])
-    op.create_index("ix_external_record_references_external_record_id", "external_record_references", ["external_record_id"])
 
     # ------------------------------------------------------------------
     # authorized_access
@@ -379,23 +374,26 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
+            index=True,
         ),
         sa.Column(
             "case_id",
             sa.String(36),
             sa.ForeignKey("cases.id", ondelete="CASCADE"),
             nullable=True,
+            index=True,
         ),
         sa.Column(
             "document_id",
             sa.String(36),
             sa.ForeignKey("documents.id", ondelete="CASCADE"),
             nullable=True,
+            index=True,
         ),
         sa.Column("purpose", sa.String(255), nullable=False),
-        sa.Column("department", sa.String(120), nullable=True),
-        sa.Column("agency", sa.String(120), nullable=True),
-        sa.Column("sensitivity_level", sa.String(30), nullable=True),
+        sa.Column("department", sa.String(120), nullable=True, index=True),
+        sa.Column("agency", sa.String(120), nullable=True, index=True),
+        sa.Column("sensitivity_level", sa.String(30), nullable=True, index=True),
         sa.Column("access_level", sa.String(50), nullable=False, server_default="read"),
         sa.Column(
             "valid_from",
@@ -405,12 +403,6 @@ def upgrade() -> None:
         ),
         sa.Column("valid_until", sa.DateTime, nullable=True),
     )
-    op.create_index("ix_authorized_access_user_id", "authorized_access", ["user_id"])
-    op.create_index("ix_authorized_access_case_id", "authorized_access", ["case_id"])
-    op.create_index("ix_authorized_access_document_id", "authorized_access", ["document_id"])
-    op.create_index("ix_authorized_access_department", "authorized_access", ["department"])
-    op.create_index("ix_authorized_access_agency", "authorized_access", ["agency"])
-    op.create_index("ix_authorized_access_sensitivity_level", "authorized_access", ["sensitivity_level"])
 
     # ------------------------------------------------------------------
     # audit_ledger_records  (blockchain-linked, append-only)
@@ -423,20 +415,23 @@ def upgrade() -> None:
             sa.String(36),
             sa.ForeignKey("cases.id", ondelete="SET NULL"),
             nullable=True,
+            index=True,
         ),
         sa.Column(
             "document_id",
             sa.String(36),
             sa.ForeignKey("documents.id", ondelete="SET NULL"),
             nullable=True,
+            index=True,
         ),
         sa.Column(
             "actor_user_id",
             sa.String(36),
             sa.ForeignKey("users.id", ondelete="SET NULL"),
             nullable=True,
+            index=True,
         ),
-        sa.Column("event_type", sa.String(80), nullable=False),
+        sa.Column("event_type", sa.String(80), nullable=False, index=True),
         sa.Column("payload_hash", sa.String(128), nullable=False),
         sa.Column("previous_hash", sa.String(128), nullable=True),
         sa.Column("record_hash", sa.String(128), nullable=False, unique=True),
@@ -449,10 +444,6 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
     )
-    op.create_index("ix_audit_ledger_records_case_id", "audit_ledger_records", ["case_id"])
-    op.create_index("ix_audit_ledger_records_document_id", "audit_ledger_records", ["document_id"])
-    op.create_index("ix_audit_ledger_records_event_type", "audit_ledger_records", ["event_type"])
-    op.create_index("ix_audit_ledger_records_record_hash", "audit_ledger_records", ["record_hash"], unique=True)
 
 
 def downgrade() -> None:

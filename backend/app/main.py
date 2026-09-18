@@ -19,15 +19,16 @@ def _run_migrations() -> None:
     """Run Alembic migrations programmatically at startup.
 
     This replaces the old Base.metadata.create_all() call so that every
-    environment — local SQLite and production PostgreSQL — is always at the
+    environment -- local SQLite and production PostgreSQL -- is always at the
     correct schema version without any manual intervention.
 
     The routine is *baseline safe*. Databases created before Alembic was
     introduced already contain the V1 tables but have either no
-    ``alembic_version`` table or an empty one. Raising those to ``head`` would
-    replay migration 0001 and fail with "table already exists", so they are
-    stamped at ``head`` first.
+    alembic_version table or an empty one. Raising those to head would
+    replay migration 0001 and fail with table already exists, so they are
+    stamped at head first.
     """
+    import logging
     from pathlib import Path
 
     from alembic import command
@@ -36,36 +37,38 @@ def _run_migrations() -> None:
 
     from .db import DATABASE_URL, engine
 
+    log = logging.getLogger("anveshan.migrations")
+    log.info("migrations: starting Alembic migration run")
+    log.info("migrations: DATABASE_URL dialect = %s", DATABASE_URL.split(":")[0] if DATABASE_URL else "unknown")
+
     ini_path = Path(__file__).resolve().parents[1] / "alembic.ini"
     cfg = Config(str(ini_path))
-    # Resolve script_location and the database URL explicitly so migrations work
-    # regardless of the current working directory and always target the same
-    # database as the application engine.
     cfg.set_main_option(
         "script_location",
         str(Path(__file__).resolve().parents[1] / "migrations"),
     )
     cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
 
-    tables = set(inspect(engine).get_table_names())
-    if "users" in tables:
-        needs_baseline = "alembic_version" not in tables
-        if not needs_baseline:
-            with engine.connect() as connection:
-                needs_baseline = connection.exec_driver_sql(
-                    "SELECT COUNT(*) FROM alembic_version"
-                ).scalar_one() == 0
-        if needs_baseline:
-            # Pre-Alembic schema: record the current revision without replaying DDL.
-            command.stamp(cfg, "head")
+    try:
+        tables = set(inspect(engine).get_table_names())
+        log.info("migrations: existing tables = %s", sorted(tables))
+        if "users" in tables:
+            needs_baseline = "alembic_version" not in tables
+            if not needs_baseline:
+                with engine.connect() as connection:
+                    needs_baseline = connection.exec_driver_sql(
+                        "SELECT COUNT(*) FROM alembic_version"
+                    ).scalar_one() == 0
+            if needs_baseline:
+                log.info("migrations: baseline stamp (pre-Alembic schema detected)")
+                command.stamp(cfg, "head")
 
-    command.upgrade(cfg, "head")
-
-
-@asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    # Run Alembic migrations — safe to call on every startup (idempotent).
-    _run_migrations()
+        log.info("migrations: running upgrade head")
+        command.upgrade(cfg, "head")
+        log.info("migrations: upgrade head completed successfully")
+    except Exception:
+        log.exception("migrations: Alembic migration failed")
+        raise
 
     # Seed default roles if they don't exist yet.
     db = SessionLocal()
