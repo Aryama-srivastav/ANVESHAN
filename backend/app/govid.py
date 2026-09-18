@@ -16,11 +16,10 @@ Privacy: only the last four characters of the identifier are ever persisted, so
 the verification record never becomes a secondary store of identity numbers.
 """
 
-from __future__ import annotations
 
 import os
 import re
-from typing import Any
+from typing import Optional,  Any
 
 import httpx
 
@@ -54,7 +53,7 @@ class GovIdVerificationAdapter:
         return os.getenv("GOV_ID_PROVIDER", "local").lower()
 
     @staticmethod
-    def verify(id_type: str, id_number: str, full_name: str | None = None) -> dict[str, Any]:
+    def verify(id_type: str, id_number: str, full_name: Optional[str] = None) -> dict[str, Any]:
         provider = GovIdVerificationAdapter.provider_name()
         if provider == "local":
             return GovIdVerificationAdapter._verify_local(id_type, id_number)
@@ -87,7 +86,7 @@ class GovIdVerificationAdapter:
         }
 
     @staticmethod
-    def _verify_http(id_type: str, id_number: str, full_name: str | None) -> dict[str, Any]:
+    def _verify_http(id_type: str, id_number: str, full_name: Optional[str]) -> dict[str, Any]:
         base_url = os.getenv("GOV_ID_API_URL")
         api_key = os.getenv("GOV_ID_API_KEY")
         if not base_url or not api_key:

@@ -14,7 +14,6 @@ Handoff rules encoded here:
   what actually creates the recipient's purpose-bound access grant.
 """
 
-from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
@@ -33,7 +32,7 @@ class TransferError(RuntimeError):
 def _transfer_hash(
     document_id: str,
     content_hash: str,
-    from_user_id: str | None,
+    from_user_id: Optional[str],
     to_user_id: str,
     purpose: str,
     timestamp: str,
@@ -195,7 +194,7 @@ class TransferService:
         return transfer
 
     @staticmethod
-    def reject(db: Session, transfer_id: str, actor: models.User, reason: str | None = None) -> models.DocumentTransfer:
+    def reject(db: Session, transfer_id: str, actor: models.User, reason: Optional[str] = None) -> models.DocumentTransfer:
         transfer = db.get(models.DocumentTransfer, transfer_id)
         if transfer is None:
             raise LookupError("Transfer not found")
