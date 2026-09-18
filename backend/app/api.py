@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import json
 
@@ -385,8 +384,8 @@ def list_document_versions(
 def upload_document_version(
     document_id: str,
     file: UploadFile = File(...),
-    created_by_user_id: str | None = Form(default=None),
-    notes: str | None = Form(default=None),
+    created_by_user_id: Optional[str] = Form(default=None),
+    notes: Optional[str] = Form(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DocumentVersionOut:

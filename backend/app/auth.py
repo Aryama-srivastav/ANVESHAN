@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import os
 import base64
@@ -6,7 +5,7 @@ import hashlib
 import hmac
 import time
 from secrets import token_bytes
-from typing import Annotated
+from typing import Optional,  Annotated
 
 import jwt
 from datetime import datetime, timedelta, timezone
@@ -41,7 +40,7 @@ def _password_hash(password: str, salt: bytes | None = None) -> str:
     return base64.urlsafe_b64encode(salt + derived).decode()
 
 
-def verify_password(password: str, encoded: str | None) -> bool:
+def verify_password(password: str, encoded: Optional[str]) -> bool:
     if not encoded:
         return False
     raw = base64.urlsafe_b64decode(encoded.encode())
