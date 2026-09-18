@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -8,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from .api import router
+from .api_ext import router as extensions_router
 from .auth import auth_router
 from .db import SessionLocal, engine
 from .services import RoleService
@@ -19,19 +21,44 @@ def _run_migrations() -> None:
     This replaces the old Base.metadata.create_all() call so that every
     environment — local SQLite and production PostgreSQL — is always at the
     correct schema version without any manual intervention.
+
+    The routine is *baseline safe*. Databases created before Alembic was
+    introduced already contain the V1 tables but have either no
+    ``alembic_version`` table or an empty one. Raising those to ``head`` would
+    replay migration 0001 and fail with "table already exists", so they are
+    stamped at ``head`` first.
     """
+    from pathlib import Path
+
     from alembic import command
     from alembic.config import Config
-    from pathlib import Path
+    from sqlalchemy import inspect
+
+    from .db import DATABASE_URL, engine
 
     ini_path = Path(__file__).resolve().parents[1] / "alembic.ini"
     cfg = Config(str(ini_path))
-    # Ensure the script_location is resolved relative to the ini file so it
-    # works regardless of the current working directory.
+    # Resolve script_location and the database URL explicitly so migrations work
+    # regardless of the current working directory and always target the same
+    # database as the application engine.
     cfg.set_main_option(
         "script_location",
         str(Path(__file__).resolve().parents[1] / "migrations"),
     )
+    cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+
+    tables = set(inspect(engine).get_table_names())
+    if "users" in tables:
+        needs_baseline = "alembic_version" not in tables
+        if not needs_baseline:
+            with engine.connect() as connection:
+                needs_baseline = connection.exec_driver_sql(
+                    "SELECT COUNT(*) FROM alembic_version"
+                ).scalar_one() == 0
+        if needs_baseline:
+            # Pre-Alembic schema: record the current revision without replaying DDL.
+            command.stamp(cfg, "head")
+
     command.upgrade(cfg, "head")
 
 
@@ -50,16 +77,33 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
 
+DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+)
+
+
+def _cors_origins() -> list[str]:
+    """Allowed browser origins.
+
+    ``CORS_ORIGINS`` (comma separated) is how a deployment declares its frontend
+    host; the localhost Vite ports remain the development default. ``*`` is
+    honoured only when explicitly configured, never implicitly.
+    """
+    configured = os.getenv("CORS_ORIGINS", "").strip()
+    if not configured:
+        return list(DEFAULT_CORS_ORIGINS)
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return origins or list(DEFAULT_CORS_ORIGINS)
+
+
 app = FastAPI(title="ANVESHAN Backend API", version="v1", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    ],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,6 +111,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(router)
+app.include_router(extensions_router)
 
 
 @app.get("/health", tags=["ops"])
@@ -76,6 +121,16 @@ def health() -> dict[str, str]:
     Returns ``{"status": "ok", "db": "ok"}`` when the database is reachable,
     or ``{"status": "degraded", "db": "<error>"}`` when it is not.
     """
+    return _health()
+
+
+@app.get("/v1/health", tags=["ops"])
+def health_v1() -> dict[str, str]:
+    """Versioned alias of ``/health`` used by the deployment probes."""
+    return _health()
+
+
+def _health() -> dict[str, str]:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))

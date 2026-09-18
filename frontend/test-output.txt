@@ -1,0 +1,691 @@
+﻿
+> anveshan-frontend@0.1.0 test:unit
+> vitest run --reporter=verbose
+
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/admin/Desktop/Aryama Project/Anveshan/ANVESHAN/frontend[39m
+
+ [31m├ù[39m tests/api.test.js[2m > [22mapi client[2m > [22mexposes the documented surface
+[31m   ΓåÆ expected 'undefined' to be 'function' // Object.is equality[39m
+ [32mΓ£ô[39m tests/api.test.js[2m > [22mapi client[2m > [22msessions are stored in localStorage under known keys
+ [32mΓ£ô[39m tests/api.test.js[2m > [22mapi client[2m > [22mapiRequest throws on non-ok responses and clears the token on 401
+ [32mΓ£ô[39m tests/api.test.js[2m > [22mapi client[2m > [22mapiRequest returns null for 204 responses
+ [31m├ù[39m tests/api.test.js[2m > [22mapi client[2m > [22mapiRequest parses JSON detail for unknown error shapes
+[31m   ΓåÆ expected [Function] to throw error matching /Request failed with 500/ but got 'not json'[39m
+ [32mΓ£ô[39m tests/api.test.js[2m > [22mapi client[2m > [22mAPI_BASE falls back to localhost:8000 when VITE_API_URL is unset
+node.exe : 
+[90mstderr[2m | 
+tests/App.test.jsx
+[2m > 
+[22m[2mApp 
+shell[2m > 
+[22m[2mrenders 
+the login screen 
+when there is no 
+session
+At line:1 char:1
++ & "C:\Program Fi
+les\nodejs/node.ex
+e" "C:\Program Fil
+es\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+    + CategoryInf 
+   o          :   
+  NotSpecified:   
+  ([90mstderr    
+[2m...e is n    
+o session:Str    
+ing) [], Remo    
+teException
+    + FullyQualif 
+   iedErrorId :   
+  NativeCommand   
+ Error
+ 
+[22m[39mWarning:
+ An update to 
+Root inside a 
+test was not 
+wrapped in 
+act(...).
+
+When testing, 
+code that causes 
+React state 
+updates should be 
+wrapped into 
+act(...):
+
+act(() => {
+  /* fire events 
+that update state 
+*/
+});
+/* assert on the 
+output */
+
+This ensures that 
+you're testing 
+the behavior the 
+user would see in 
+the browser. 
+Learn more at http
+s://reactjs.org/li
+nk/wrap-tests-with
+-act
+
+[90mstderr[2m | 
+tests/App.test.jsx
+[2m > 
+[22m[2mApp 
+shell[2m > 
+[22m[2mshows 
+role selection on 
+the login screen
+[22m[39mWarning:
+ An update to 
+Root inside a 
+test was not 
+wrapped in 
+act(...).
+
+When testing, 
+code that causes 
+React state 
+updates should be 
+wrapped into 
+act(...):
+
+act(() => {
+  /* fire events 
+that update state 
+*/
+});
+/* assert on the 
+output */
+
+This ensures that 
+you're testing 
+the behavior the 
+user would see in 
+the browser. 
+Learn more at http
+s://reactjs.org/li
+nk/wrap-tests-with
+-act
+
+[90mstderr[2m | 
+tests/App.test.jsx
+[2m > 
+[22m[2mApp 
+shell[2m > 
+[22m[2mclearing 
+the session 
+returns to the 
+login screen
+[22m[39mWarning:
+ An update to 
+Root inside a 
+test was not 
+wrapped in 
+act(...).
+
+When testing, 
+code that causes 
+React state 
+updates should be 
+wrapped into 
+act(...):
+
+act(() => {
+  /* fire events 
+that update state 
+*/
+});
+/* assert on the 
+output */
+
+This ensures that 
+you're testing 
+the behavior the 
+user would see in 
+the browser. 
+Learn more at http
+s://reactjs.org/li
+nk/wrap-tests-with
+-act
+
+ [31m├ù[39m tests/App.test.jsx[2m > [22mApp shell[2m > [22mrenders the login screen when there is no session
+[31m   ΓåÆ Unable to find an accessible element with the role "button" and name `/terminate/i`
+
+There are no accessible roles. But there might be some inaccessible roles. If you wish to access them, then set the `hidden` option to `true`. Learn more about this here: https://testing-library.com/docs/dom-testing-library/api-queries#byrole
+
+Ignored nodes: comments, script, style
+[36m<body />[31m[39m
+ [31m├ù[39m tests/App.test.jsx[2m > [22mApp shell[2m > [22mshows role selection on the login screen
+[31m   ΓåÆ Unable to find an element with the text: /operator access/i. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body />[31m[39m
+ [31m├ù[39m tests/App.test.jsx[2m > [22mApp shell[2m > [22moperator login flow calls the prototype login endpoint and stores the session
+[31m   ΓåÆ Response is not a constructor[39m
+ [31m├ù[39m tests/App.test.jsx[2m > [22mApp shell[2m > [22mclearing the session returns to the login screen
+[31m   ΓåÆ [2mexpect([22m[31mreceived[31m[2m).toBeInTheDocument()[22m
+
+[31mreceived[31m value must be an HTMLElement or an SVGElement.
+[39m
+
+[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»Γ
+Ä»ΓÄ»ΓÄ»[1m[7m 
+Failed Tests 6 [2
+7m[22mΓÄ»ΓÄ»ΓÄ»ΓÄ
+»ΓÄ»ΓÄ»ΓÄ»[39m
+
+[31m[1m[7m 
+FAIL 
+[27m[22m[39m te
+sts/api.test.js[2
+m > [22mapi 
+client[2m > 
+[22mexposes the 
+documented surface
+[31m[1mAssertion
+Error[22m: 
+expected 
+'undefined' to be 
+'function' // 
+Object.is 
+equality[39m
+
+Expected: [32m"[
+7mf[27mun[7mctio
+n[27m"[39m
+Received: [31m"un
+[7mdefined[27m"
+[39m
+
+[36m 
+[2mΓ¥»[22m tests
+/api.test.js:[2m1
+9:34[22m[39m
+    [90m 17| 
+[39m    [34mexpe
+ct[39m([35mtypeo
+f[39m api[33m.[
+39msetupMfa)[33m.
+[39m[34mtoBe[39
+m([32m"function"
+[39m)[33m;[39m
+    [90m 18| 
+[39m    [34mexpe
+ct[39m([35mtypeo
+f[39m api[33m.[
+39mgetUserMe)[33m
+.[39m[34mtoBe[3
+9m([32m"function"
+[39m)[33m;[39m
+    [90m 19| 
+[39m    [34mexpe
+ct[39m([35mtypeo
+f[39m api[33m.[
+39mlistRoles)[33m
+.[39m[34mtoBe[3
+9m([32m"function"
+[39m)[33m;[39m
+    [90m   | 
+[39m             
+                  
+  [31m^[39m
+    [90m 20| 
+[39m    [34mexpe
+ct[39m([35mtypeo
+f[39m api[33m.[
+39mlistUsers)[33m
+.[39m[34mtoBe[3
+9m([32m"function"
+[39m)[33m;[39m
+    [90m 21| 
+[39m    [34mexpe
+ct[39m([35mtypeo
+f[39m api[33m.[
+39mcreateUser)[33
+m.[39m[34mtoBe[
+39m([32m"function
+"[39m)[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[1/6]ΓÄ»
+[22m[39m
+
+[31m[1m[7m 
+FAIL 
+[27m[22m[39m te
+sts/api.test.js[2
+m > [22mapi 
+client[2m > 
+[22mapiRequest 
+parses JSON 
+detail for 
+unknown error 
+shapes
+[31m[1mAssertion
+Error[22m: 
+expected 
+[Function] to 
+throw error 
+matching /Request 
+failed with 500/ 
+but got 'not 
+json'[39m
+
+[32m- 
+Expected:[39m 
+/Request failed 
+with 500/
+
+[31m+ 
+Received:[39m 
+"not json"
+
+[36m 
+[2mΓ¥»[22m tests
+/api.test.js:[2m7
+9:5[22m[39m
+    [90m 77| 
+[39m    
+[35mconst[39m 
+err [33m=[39m 
+[35mnew[39m [33
+mResponse[39m([3
+2m'not json'[39m
+[33m,[39m { 
+status[33m:[39m 
+[34m500[39m 
+})[33m;[39m
+    [90m 78| 
+[39m    window[3
+3m.[39mfetch 
+[33m=[39m vi[33
+m.[39m[34mfn[39
+m()[33m.[39m[34
+mmockResolvedValue
+[39m(err)[33m;[
+39m
+    [90m 79| 
+[39m    
+[35mawait[39m [
+34mexpect[39m(api
+[33m.[39m[34mli
+stCases[39m())[3
+3m.[39mrejects[3
+3m.[39m[34mtoThr
+ow[39m([36m/Requ
+est failed 
+with[39mΓÇª
+    [90m   | 
+[39m    
+[31m^[39m
+    [90m 80| 
+[39m  
+})[33m;[39m
+    [90m 81| 
+[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[2/6]ΓÄ»
+[22m[39m
+
+[31m[1m[7m 
+FAIL 
+[27m[22m[39m te
+sts/App.test.jsx[
+2m > [22mApp 
+shell[2m > 
+[22mrenders the 
+login screen when 
+there is no 
+session
+[31m[1mTestingLi
+braryElementError
+[22m: Unable to 
+find an 
+accessible 
+element with the 
+role "button" and 
+name 
+`/terminate/i`
+
+There are no 
+accessible roles. 
+But there might 
+be some 
+inaccessible 
+roles. If you 
+wish to access 
+them, then set 
+the `hidden` 
+option to `true`. 
+Learn more about 
+this here: https:/
+/testing-library.c
+om/docs/dom-testin
+g-library/api-quer
+ies#byrole
+
+Ignored nodes: 
+comments, script, 
+style
+[36m<body 
+/>[31m[39m
+[90m 
+[2mΓ¥»[22m Objec
+t.getElementError 
+node_modules/@test
+ing-library/dom/di
+st/config.js:[2m3
+7:19[22m[39m
+[90m 
+[2mΓ¥»[22m node_
+modules/@testing-l
+ibrary/dom/dist/qu
+ery-helpers.js:[2
+m76:38[22m[39m
+[90m 
+[2mΓ¥»[22m node_
+modules/@testing-l
+ibrary/dom/dist/qu
+ery-helpers.js:[2
+m52:17[22m[39m
+[90m 
+[2mΓ¥»[22m node_
+modules/@testing-l
+ibrary/dom/dist/qu
+ery-helpers.js:[2
+m95:19[22m[39m
+[36m 
+[2mΓ¥»[22m tests
+/App.test.jsx:[2m
+61:19[22m[39m
+    [90m 59| 
+[39m  [34mit[39
+m([32m"renders 
+the login screen 
+when there is no s
+ession"[39m[33m,
+[39m () 
+[33m=>[39m {
+    [90m 60| 
+[39m    [34mmoun
+tApp[39m()[33m;
+[39m
+    [90m 61| 
+[39m    [34mexpe
+ct[39m(screen[33
+m.[39m[34mgetByR
+ole[39m([32m"but
+ton"[39m[33m,[3
+9m { 
+name[33m:[39m [
+36m/terminate/i[3
+9m }))[33m.[39m
+[34mtoBeInT[39mΓÇ
+ª
+    [90m   | 
+[39m             
+     [31m^[39m
+    [90m 62| 
+[39m  
+})[33m;[39m
+    [90m 63| 
+[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[3/6]ΓÄ»
+[22m[39m
+
+[31m[1m[7m 
+FAIL 
+[27m[22m[39m te
+sts/App.test.jsx[
+2m > [22mApp 
+shell[2m > 
+[22mshows role 
+selection on the 
+login screen
+[31m[1mTestingLi
+braryElementError
+[22m: Unable to 
+find an element 
+with the text: 
+/operator 
+access/i. This 
+could be because 
+the text is 
+broken up by 
+multiple 
+elements. In this 
+case, you can 
+provide a 
+function for your 
+text matcher to 
+make your matcher 
+more flexible.
+
+Ignored nodes: 
+comments, script, 
+style
+[36m<body 
+/>[31m[39m
+[90m 
+[2mΓ¥»[22m Objec
+t.getElementError 
+node_modules/@test
+ing-library/dom/di
+st/config.js:[2m3
+7:19[22m[39m
+[90m 
+[2mΓ¥»[22m node_
+modules/@testing-l
+ibrary/dom/dist/qu
+ery-helpers.js:[2
+m76:38[22m[39m
+[90m 
+[2mΓ¥»[22m node_
+modules/@testing-l
+ibrary/dom/dist/qu
+ery-helpers.js:[2
+m52:17[22m[39m
+[90m 
+[2mΓ¥»[22m node_
+modules/@testing-l
+ibrary/dom/dist/qu
+ery-helpers.js:[2
+m95:19[22m[39m
+[36m 
+[2mΓ¥»[22m tests
+/App.test.jsx:[2m
+66:19[22m[39m
+    [90m 64| 
+[39m  [34mit[39
+m([32m"shows 
+role selection on 
+the login screen"
+[39m[33m,[39m 
+() [33m=>[39m {
+    [90m 65| 
+[39m    [34mmoun
+tApp[39m()[33m;
+[39m
+    [90m 66| 
+[39m    [34mexpe
+ct[39m(screen[33
+m.[39m[34mgetByT
+ext[39m([36m/ope
+rator access/i[39
+m))[33m.[39m[34
+mtoBeInTheDocument
+[39m()[33m;[39m
+    [90m   | 
+[39m             
+     [31m^[39m
+    [90m 67| 
+[39m  
+})[33m;[39m
+    [90m 68| 
+[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[4/6]ΓÄ»
+[22m[39m
+
+[31m[1m[7m 
+FAIL 
+[27m[22m[39m te
+sts/App.test.jsx[
+2m > [22mApp 
+shell[2m > 
+[22moperator 
+login flow calls 
+the prototype 
+login endpoint 
+and stores the 
+session
+[31m[1mTypeError
+[22m: Response 
+is not a 
+constructor[39m
+[36m 
+[2mΓ¥»[22m tests
+/App.test.jsx:[2m
+71:7[22m[39m
+    [90m 69| 
+[39m  [34mit[39
+m([32m"operator 
+login flow calls 
+the prototype 
+login endpoint 
+and store[39mΓÇª
+    [90m 70| 
+[39m    window[3
+3m.[39mfetch 
+[33m=[39m vi[33
+m.[39m[34mfn[39
+m()[33m.[39m[34
+mmockResolvedValue
+Once[39m(
+    [90m 71| 
+[39m      
+[35mnew[39m [33
+mResponse[39m(
+    [90m   | 
+[39m      
+[31m^[39m
+    [90m 72| 
+[39m        [33m
+JSON[39m[33m.[3
+9m[34mstringify[
+39m({
+    [90m 73| 
+[39m          acc
+ess_token[33m:[3
+9m [32m"tok"[39m
+[33m,[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[5/6]ΓÄ»
+[22m[39m
+
+[31m[1m[7m 
+FAIL 
+[27m[22m[39m te
+sts/App.test.jsx[
+2m > [22mApp 
+shell[2m > 
+[22mclearing the 
+session returns 
+to the login 
+screen
+[31m[1mError[22
+m: [2mexpect([22
+m[31mreceived[31
+m[2m).toBeInTheDo
+cument()[22m
+
+[31mreceived[31m
+ value must be an 
+HTMLElement or an 
+SVGElement.
+[39m
+[36m 
+[2mΓ¥»[22m tests
+/App.test.jsx:[2m
+94:66[22m[39m
+    [90m 92| 
+[39m    [34mmoun
+tApp[39m()[33m;
+[39m
+    [90m 93| 
+[39m    [90m// 
+The shell hides 
+the login screen 
+once a token 
+exists[39m
+    [90m 94| 
+[39m    [34mexpe
+ct[39m(screen[33
+m.[39m[34mqueryB
+yRole[39m([32m"b
+utton"[39m[33m,
+[39m { 
+name[33m:[39m [
+36m/terminate/i[3
+9m }))[33m.[39m
+[34mtoBeI[39mΓÇª
+    [90m   | 
+[39m             
+                  
+                  
+                
+[31m^[39m
+    [90m 95| 
+[39m    [34mclea
+rSession[39m()[3
+3m;[39m
+    [90m 96| 
+[39m    [90m// 
+A fresh mount 
+would show the 
+login screen 
+again[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+ΓÄ»ΓÄ»ΓÄ»[6/6]ΓÄ»
+[22m[39m
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[31m6 failed[39m[22m[2m | [22m[1m[32m4 passed[39m[22m[90m (10)[39m
+[2m   Start at [22m 14:06:27
+[2m   Duration [22m 17.76s[2m (transform 1.84s, setup 2.65s, collect 5.45s, tests 494ms, environment 13.66s, prepare 4.20s)[22m
+
