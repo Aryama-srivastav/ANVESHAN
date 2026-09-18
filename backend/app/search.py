@@ -22,7 +22,6 @@ Design notes
   without changing this module's contract, the schemas or the frontend.
 """
 
-from __future__ import annotations
 
 import json
 import time
@@ -208,12 +207,12 @@ class SearchService:
         user: models.User,
         *,
         query: str = "",
-        case_id: str | None = None,
+        case_id: Optional[str] = None,
         from_date: datetime | None = None,
         to_date: datetime | None = None,
-        entity: str | None = None,
-        doc_type: str | None = None,
-        sensitivity: str | None = None,
+        entity: Optional[str] = None,
+        doc_type: Optional[str] = None,
+        sensitivity: Optional[str] = None,
         limit: int = 25,
         offset: int = 0,
     ) -> schemas.SearchResponseOut:

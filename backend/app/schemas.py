@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -10,9 +8,9 @@ class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
     password: str = Field(min_length=12)
-    department: str | None = None
-    agency: str | None = None
-    clearance_level: str | None = None
+    department: Optional[str] = None
+    agency: Optional[str] = None
+    clearance_level: Optional[str] = None
 
 
 class UserOut(BaseModel):
@@ -21,9 +19,9 @@ class UserOut(BaseModel):
     full_name: str
     is_active: bool
     mfa_enabled: bool = False
-    department: str | None = None
-    agency: str | None = None
-    clearance_level: str | None = None
+    department: Optional[str] = None
+    agency: Optional[str] = None
+    clearance_level: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -57,8 +55,8 @@ class LoginRequest(BaseModel):
 
 class LoginChallengeOut(BaseModel):
     mfa_required: bool
-    challenge_token: str | None = None
-    access_token: str | None = None
+    challenge_token: Optional[str] = None
+    access_token: Optional[str] = None
     token_type: str = "bearer"
 
 
@@ -73,7 +71,7 @@ class PasswordResetRequest(BaseModel):
 
 class PasswordResetRequestOut(BaseModel):
     message: str
-    development_reset_token: str | None = None
+    development_reset_token: Optional[str] = None
 
 
 class PasswordResetConfirm(BaseModel):
@@ -89,19 +87,19 @@ class MfaSetupOut(BaseModel):
 class CaseCreate(BaseModel):
     case_number: str
     title: str
-    description: str | None = None
+    description: Optional[str] = None
 
 
 class CaseUpdate(BaseModel):
-    title: str | None = None
-    description: str | None = None
-    status: str | None = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
 
 class CaseOut(BaseModel):
     id: str
     case_number: str
     title: str
-    description: str | None
+    description: Optional[str]
     status: str
     created_at: datetime
 
@@ -117,11 +115,11 @@ class CaseEventCreate(BaseModel):
 class CaseEventOut(BaseModel):
     id: str
     case_id: str
-    actor_user_id: str | None
+    actor_user_id: Optional[str]
     event_type: str
     action: str
     details: dict[str, Any]
-    previous_event_hash: str | None
+    previous_event_hash: Optional[str]
     event_hash: str
     created_at: datetime
 
@@ -176,7 +174,7 @@ class IntegrityVerifyOut(BaseModel):
 class SignatureOut(BaseModel):
     id: str
     document_version_id: str
-    signer_user_id: str | None
+    signer_user_id: Optional[str]
     algorithm: str
     signed_hash: str
     created_at: datetime
@@ -192,12 +190,12 @@ class SignatureVerifyOut(BaseModel):
 
 class AccessGrantCreate(BaseModel):
     user_id: str
-    case_id: str | None = None
-    document_id: str | None = None
+    case_id: Optional[str] = None
+    document_id: Optional[str] = None
     purpose: str
-    department: str | None = None
-    agency: str | None = None
-    sensitivity_level: str | None = None
+    department: Optional[str] = None
+    agency: Optional[str] = None
+    sensitivity_level: Optional[str] = None
     access_level: str = "read"
     valid_until: datetime | None = None
 
@@ -205,12 +203,12 @@ class AccessGrantCreate(BaseModel):
 class AccessGrantOut(BaseModel):
     id: str
     user_id: str
-    case_id: str | None
-    document_id: str | None
+    case_id: Optional[str]
+    document_id: Optional[str]
     purpose: str
-    department: str | None = None
-    agency: str | None = None
-    sensitivity_level: str | None = None
+    department: Optional[str] = None
+    agency: Optional[str] = None
+    sensitivity_level: Optional[str] = None
     access_level: str
     valid_from: datetime
     valid_until: datetime | None
@@ -220,22 +218,22 @@ class AccessGrantOut(BaseModel):
 
 class TagCreate(BaseModel):
     name: str
-    category: str | None = None
+    category: Optional[str] = None
 
 
 class TagOut(BaseModel):
     id: str
     name: str
-    category: str | None
+    category: Optional[str]
 
     model_config = {"from_attributes": True}
 
 
 class OriginalRecordCreate(BaseModel):
-    source_system: str | None = None
-    source_reference: str | None = None
+    source_system: Optional[str] = None
+    source_reference: Optional[str] = None
     acquired_at: datetime | None = None
-    immutable_hash: str | None = None
+    immutable_hash: Optional[str] = None
 
 
 class IdentityVerificationCreate(BaseModel):
@@ -244,15 +242,15 @@ class IdentityVerificationCreate(BaseModel):
     verifier: str
     status: str = "pending"
     verified_at: datetime | None = None
-    notes: str | None = None
+    notes: Optional[str] = None
 
 
 class ExternalReferenceCreate(BaseModel):
-    case_id: str | None = None
-    document_id: str | None = None
+    case_id: Optional[str] = None
+    document_id: Optional[str] = None
     source_system: str
     external_record_id: str
-    record_url: str | None = None
+    record_url: Optional[str] = None
 
 
 class MessageOut(BaseModel):
@@ -314,14 +312,14 @@ class MlSuggestionOut(BaseModel):
     entities: dict[str, list[str]] = Field(default_factory=dict)
     scores: dict[str, float] = Field(default_factory=dict)
     excerpt: str = ""
-    scored_at: str | None = None
+    scored_at: Optional[str] = None
 
 
 class MlAcceptRequest(BaseModel):
     """Human confirmation. Omit ``tags`` to accept every suggestion."""
 
     tags: list[str] | None = None
-    category: str | None = None
+    category: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -331,12 +329,12 @@ class MlAcceptRequest(BaseModel):
 
 class AuditTrailRecordOut(BaseModel):
     id: str
-    case_id: str | None
-    document_id: str | None
-    actor_user_id: str | None
+    case_id: Optional[str]
+    document_id: Optional[str]
+    actor_user_id: Optional[str]
     event_type: str
     payload_hash: str
-    previous_hash: str | None
+    previous_hash: Optional[str]
     record_hash: str
     ledger_provider: str
     transaction_id: str
@@ -361,12 +359,12 @@ class TransferCreate(BaseModel):
 class TransferOut(BaseModel):
     id: str
     document_id: str
-    from_user_id: str | None
+    from_user_id: Optional[str]
     to_user_id: str
-    from_department: str | None
-    to_department: str | None
-    from_agency: str | None
-    to_agency: str | None
+    from_department: Optional[str]
+    to_department: Optional[str]
+    from_agency: Optional[str]
+    to_agency: Optional[str]
     transfer_purpose: str
     access_level: str
     status: str
@@ -379,9 +377,9 @@ class TransferOut(BaseModel):
 
 
 class TransferDetailOut(TransferOut):
-    document_title: str | None = None
-    case_id: str | None = None
-    case_number: str | None = None
+    document_title: Optional[str] = None
+    case_id: Optional[str] = None
+    case_number: Optional[str] = None
     audit_reference: list[AuditTrailRecordOut] = Field(default_factory=list)
 
 
@@ -410,7 +408,7 @@ class GovIdVerifyRequest(BaseModel):
     user_id: str
     id_type: str = "aadhaar"
     id_number: str = Field(min_length=4)
-    full_name: str | None = None
+    full_name: Optional[str] = None
 
 
 class GovIdVerifyOut(BaseModel):
@@ -418,7 +416,7 @@ class GovIdVerifyOut(BaseModel):
     user_id: str
     status: str
     provider: str
-    reference: str | None = None
+    reference: Optional[str] = None
     detail: str
 
 
@@ -429,7 +427,7 @@ class IdentityVerificationOut(BaseModel):
     verifier: str
     status: str
     verified_at: datetime | None
-    notes: str | None
+    notes: Optional[str]
 
     model_config = {"from_attributes": True}
 
@@ -442,10 +440,10 @@ class IdentityVerificationOut(BaseModel):
 class OriginalRecordOut(BaseModel):
     id: str
     document_id: str
-    source_system: str | None
-    source_reference: str | None
+    source_system: Optional[str]
+    source_reference: Optional[str]
     acquired_at: datetime | None
-    immutable_hash: str | None
+    immutable_hash: Optional[str]
 
     model_config = {"from_attributes": True}
 
@@ -455,7 +453,7 @@ class IntegritySummaryItemOut(BaseModel):
     version_number: int
     is_original: bool
     expected_hash: str
-    observed_hash: str | None = None
+    observed_hash: Optional[str] = None
     status: str
     created_at: datetime
 
@@ -468,11 +466,11 @@ class IntegritySummaryOut(BaseModel):
 
 class ExternalReferenceOut(BaseModel):
     id: str
-    case_id: str | None
-    document_id: str | None
+    case_id: Optional[str]
+    document_id: Optional[str]
     source_system: str
     external_record_id: str
-    record_url: str | None
+    record_url: Optional[str]
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -489,3 +487,5 @@ class BackupStatusOut(BaseModel):
     backup_dir: str
     database_scheme: str
     backups: list[dict[str, Any]] = Field(default_factory=list)
+
+

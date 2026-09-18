@@ -22,7 +22,6 @@ Usage (from ``backend/``)::
     python -m app.backup restore <backup-dir> --force
 """
 
-from __future__ import annotations
 
 import argparse
 import hashlib
@@ -88,7 +87,7 @@ def list_backups() -> list[dict]:
     return found
 
 
-def create_backup(destination: str | None = None) -> dict:
+def create_backup(destination: Optional[str] = None) -> dict:
     """Create a timestamped backup of the database and the evidence store."""
     root = Path(destination) if destination else backup_root()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
