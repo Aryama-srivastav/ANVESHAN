@@ -16,6 +16,8 @@ structures, never a parallel system, and never applied to the document until a
 human accepts it (human-in-the-loop).
 """
 
+from __future__ import annotations
+
 
 import json
 from datetime import datetime, timezone

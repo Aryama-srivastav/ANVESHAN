@@ -22,6 +22,8 @@ Usage (from ``backend/``)::
     python -m app.backup restore <backup-dir> --force
 """
 
+from __future__ import annotations
+
 
 import argparse
 import hashlib

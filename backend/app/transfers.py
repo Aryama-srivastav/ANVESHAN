@@ -14,6 +14,8 @@ Handoff rules encoded here:
   what actually creates the recipient's purpose-bound access grant.
 """
 
+from __future__ import annotations
+
 
 import hashlib
 from datetime import datetime, timezone

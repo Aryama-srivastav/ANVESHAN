@@ -22,6 +22,8 @@ Design notes
   without changing this module's contract, the schemas or the frontend.
 """
 
+from __future__ import annotations
+
 
 import json
 import time

@@ -14,6 +14,8 @@ Keeping these in a separate module means ``api.py`` stays the stable core
 evidence API while the workflow surface grows here.
 """
 
+from __future__ import annotations
+
 
 from datetime import datetime, timezone
 from typing import Optional

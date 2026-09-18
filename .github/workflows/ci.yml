@@ -56,7 +56,7 @@ jobs:
           DATABASE_URL: sqlite:///./ci-anveshan.db
           JWT_SECRET: ci-jwt-secret-that-is-at-least-32-bytes-long
           APP_SECRET_KEY: ci-application-secret-key
-          DOCUMENT_ENCRYPTION_KEY: ${{ secrets.CI_DOCUMENT_ENCRYPTION_KEY || 'Y2ktZG9jdW1lbnQtZW5jcnlwdGlvbi1rZXktMzJieXRl' }}
+          DOCUMENT_ENCRYPTION_KEY: ${{ secrets.CI_DOCUMENT_ENCRYPTION_KEY || 'Y2ktYW52ZXNoYW4tZW5jcnlwdGlvbi1rZXktMzJieXQ=' }}
           BLOCKCHAIN_PROVIDER: local
           GOV_ID_PROVIDER: local
           REQUIRE_MFA: "false"
