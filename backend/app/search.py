@@ -26,6 +26,7 @@ Design notes
 import json
 import time
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session

@@ -19,6 +19,7 @@ human accepts it (human-in-the-loop).
 
 import json
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session

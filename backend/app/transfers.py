@@ -17,6 +17,7 @@ Handoff rules encoded here:
 
 import hashlib
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session

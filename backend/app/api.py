@@ -20,6 +20,7 @@ from .schemas import (
     CaseEventCreate,
     CaseEventOut,
     CaseOut,
+    CaseUpdate,
     DocumentCreate,
     DocumentDetailOut,
     DocumentOut,
