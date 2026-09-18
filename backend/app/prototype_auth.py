@@ -26,6 +26,12 @@ DEFAULT_PROTOTYPE_LOGINS = {
         "full_name": "Prototype Administrator",
         "role": "admin",
     },
+    "viewer": {
+        "email": "viewer@prototype.anveshan",
+        "password": "viewer",
+        "full_name": "Prototype Read-Only Viewer",
+        "role": "viewer",
+    },
 }
 
 

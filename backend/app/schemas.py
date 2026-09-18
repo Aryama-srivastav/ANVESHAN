@@ -103,6 +103,7 @@ class CaseOut(BaseModel):
     title: str
     description: str | None
     status: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -142,6 +143,7 @@ class DocumentOut(BaseModel):
     doc_type: str
     sensitivity_level: str
     status: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -256,3 +258,234 @@ class ExternalReferenceCreate(BaseModel):
 class MessageOut(BaseModel):
     message: str
     data: dict[str, Any] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Search (V1 Step 8)
+# ---------------------------------------------------------------------------
+
+
+class SearchHitOut(BaseModel):
+    document_id: str
+    case_id: str
+    case_number: str
+    case_title: str
+    title: str
+    doc_type: str
+    sensitivity_level: str
+    score: float
+    excerpt: str
+    tags: list[str] = Field(default_factory=list)
+    entities: dict[str, list[str]] = Field(default_factory=dict)
+    matched_fields: list[str] = Field(default_factory=list)
+    activity_at: datetime
+    version_count: int = 0
+
+
+class SearchFacetsOut(BaseModel):
+    entities: dict[str, list[str]] = Field(default_factory=dict)
+    doc_types: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    sensitivity_levels: list[str] = Field(default_factory=list)
+
+
+class SearchResponseOut(BaseModel):
+    query: str = ""
+    total: int = 0
+    limit: int = 25
+    offset: int = 0
+    took_ms: int = 0
+    hits: list[SearchHitOut] = Field(default_factory=list)
+    facets: SearchFacetsOut = Field(default_factory=SearchFacetsOut)
+
+
+# ---------------------------------------------------------------------------
+# ML classification & tagging (V1 Step 9)
+# ---------------------------------------------------------------------------
+
+
+class MlSuggestionOut(BaseModel):
+    document_id: str
+    engine: str
+    status: str
+    category: str
+    confidence: float = 0.0
+    tags: list[str] = Field(default_factory=list)
+    entities: dict[str, list[str]] = Field(default_factory=dict)
+    scores: dict[str, float] = Field(default_factory=dict)
+    excerpt: str = ""
+    scored_at: str | None = None
+
+
+class MlAcceptRequest(BaseModel):
+    """Human confirmation. Omit ``tags`` to accept every suggestion."""
+
+    tags: list[str] | None = None
+    category: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Tamper-evident audit ledger (V1 Step 13)
+# ---------------------------------------------------------------------------
+
+
+class AuditTrailRecordOut(BaseModel):
+    id: str
+    case_id: str | None
+    document_id: str | None
+    actor_user_id: str | None
+    event_type: str
+    payload_hash: str
+    previous_hash: str | None
+    record_hash: str
+    ledger_provider: str
+    transaction_id: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Secure inter-department / inter-agency transfer (V1 Step 10)
+# ---------------------------------------------------------------------------
+
+
+class TransferCreate(BaseModel):
+    document_id: str
+    to_user_id: str
+    transfer_purpose: str = Field(min_length=3)
+    access_level: str = "read"
+    valid_until: datetime | None = None
+
+
+class TransferOut(BaseModel):
+    id: str
+    document_id: str
+    from_user_id: str | None
+    to_user_id: str
+    from_department: str | None
+    to_department: str | None
+    from_agency: str | None
+    to_agency: str | None
+    transfer_purpose: str
+    access_level: str
+    status: str
+    transfer_hash: str
+    created_at: datetime
+    transferred_at: datetime | None
+    accepted_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class TransferDetailOut(TransferOut):
+    document_title: str | None = None
+    case_id: str | None = None
+    case_number: str | None = None
+    audit_reference: list[AuditTrailRecordOut] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Audit trail / blockchain verification (V1 Step 13)
+# ---------------------------------------------------------------------------
+
+
+class AuditTrailVerifyOut(BaseModel):
+    record_id: str
+    verified: bool
+    expected_hash: str
+    observed_hash: str
+    chain_linked: bool
+    ledger_provider: str
+    transaction_id: str
+    detail: str
+
+
+# ---------------------------------------------------------------------------
+# Government identity verification (V1 Step 11)
+# ---------------------------------------------------------------------------
+
+
+class GovIdVerifyRequest(BaseModel):
+    user_id: str
+    id_type: str = "aadhaar"
+    id_number: str = Field(min_length=4)
+    full_name: str | None = None
+
+
+class GovIdVerifyOut(BaseModel):
+    verification_id: str
+    user_id: str
+    status: str
+    provider: str
+    reference: str | None = None
+    detail: str
+
+
+class IdentityVerificationOut(BaseModel):
+    id: str
+    user_id: str
+    verification_method: str
+    verifier: str
+    status: str
+    verified_at: datetime | None
+    notes: str | None
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Original record, integrity summary, external records
+# ---------------------------------------------------------------------------
+
+
+class OriginalRecordOut(BaseModel):
+    id: str
+    document_id: str
+    source_system: str | None
+    source_reference: str | None
+    acquired_at: datetime | None
+    immutable_hash: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class IntegritySummaryItemOut(BaseModel):
+    version_id: str
+    version_number: int
+    is_original: bool
+    expected_hash: str
+    observed_hash: str | None = None
+    status: str
+    created_at: datetime
+
+
+class IntegritySummaryOut(BaseModel):
+    document_id: str
+    versions: list[IntegritySummaryItemOut] = Field(default_factory=list)
+    intact: bool
+
+
+class ExternalReferenceOut(BaseModel):
+    id: str
+    case_id: str | None
+    document_id: str | None
+    source_system: str
+    external_record_id: str
+    record_url: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Operations
+# ---------------------------------------------------------------------------
+
+
+class BackupStatusOut(BaseModel):
+    storage_provider: str
+    encryption_enabled: bool
+    backup_dir: str
+    database_scheme: str
+    backups: list[dict[str, Any]] = Field(default_factory=list)

@@ -42,11 +42,12 @@ from .services import (
     AccessService,
     CaseEventService,
     CaseService,
-    ClassificationService,
     DocumentService,
     RecordService,
     UserService,
+    validate_external_source,
 )
+from .classification import ClassificationService
 from .storage import StorageError, get_storage
 from .signatures import SignatureService
 from .ledger import AuditLedger, LedgerError
@@ -354,6 +355,7 @@ def get_document(
         doc_type=document.doc_type,
         sensitivity_level=document.sensitivity_level,
         status=document.status,
+        created_at=document.created_at,
         metadata={item.meta_key: item.meta_value for item in document.metadata_items},
         version_count=len(document.versions),
     )
@@ -401,6 +403,7 @@ def upload_document_version(
             get_storage(),
             current_user.id,
             notes,
+            filename=file.filename,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -507,6 +510,16 @@ def download_document_version(
         raise HTTPException(status_code=410, detail="Stored evidence was not found") from exc
     except StorageError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+# Every evidence retrieval is itself an auditable custody event.
+    AuditLedger.record(
+        db,
+        event_type="document_downloaded",
+        actor_user_id=current_user.id,
+        case_id=document.case_id,
+        document_id=document_id,
+        payload={"version_id": version.id, "version_number": version.version_number},
+    )
+    db.commit()
     return StreamingResponse(content, media_type="application/octet-stream")
 
 
@@ -643,6 +656,11 @@ def create_external_reference(
 ) -> MessageOut:
     if not payload.case_id and not payload.document_id:
         raise HTTPException(status_code=400, detail="Either case_id or document_id is required")
+    try:
+        payload.source_system = validate_external_source(payload.source_system)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     try:
         if payload.document_id:
             document = DocumentService.get(db, payload.document_id)

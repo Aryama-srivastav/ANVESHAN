@@ -1,0 +1,85 @@
+# ANVESHAN V1 — full stack (PostgreSQL + FastAPI backend + React frontend)
+#
+#   cp .env.production.example .env.production   # then fill in the secrets
+#   docker compose --env-file .env.production up --build -d
+#
+# The backend runs Alembic migrations on startup, so the database schema is
+# created automatically on first boot.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-anveshan}
+      POSTGRES_USER: ${POSTGRES_USER:-anveshan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-anveshan} -d ${POSTGRES_DB:-anveshan}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - anveshan
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-anveshan}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-anveshan}
+      APP_ENV: ${APP_ENV:-production}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?set APP_SECRET_KEY in .env.production}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.production}
+      REQUIRE_MFA: ${REQUIRE_MFA:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      # Evidence at rest: AES-256-GCM envelope encryption (32-byte base64 key).
+      DOCUMENT_ENCRYPTION_ENABLED: ${DOCUMENT_ENCRYPTION_ENABLED:-true}
+      DOCUMENT_ENCRYPTION_KEY: ${DOCUMENT_ENCRYPTION_KEY:?set DOCUMENT_ENCRYPTION_KEY in .env.production}
+      OBJECT_STORAGE_PROVIDER: local
+      OBJECT_STORAGE_DIR: /data/uploads
+      SIGNING_KEY_PATH: /data/keys/document-signing-key.pem
+      BACKUP_DIR: /data/backups
+      BLOCKCHAIN_PROVIDER: ${BLOCKCHAIN_PROVIDER:-local}
+      FABRIC_GATEWAY_URL: ${FABRIC_GATEWAY_URL:-}
+      FABRIC_GATEWAY_TOKEN: ${FABRIC_GATEWAY_TOKEN:-}
+      GOV_ID_PROVIDER: ${GOV_ID_PROVIDER:-local}
+      GOV_ID_API_URL: ${GOV_ID_API_URL:-}
+      GOV_ID_API_KEY: ${GOV_ID_API_KEY:-}
+      GOV_ID_API_TIMEOUT: ${GOV_ID_API_TIMEOUT:-15}
+    volumes:
+      - evidence-data:/data/uploads
+      - signing-keys:/data/keys
+      - backups:/data/backups
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    networks:
+      - anveshan
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    networks:
+      - anveshan
+
+volumes:
+  db-data:
+  evidence-data:
+  signing-keys:
+  backups:
+
+networks:
+  anveshan:
+    driver: bridge

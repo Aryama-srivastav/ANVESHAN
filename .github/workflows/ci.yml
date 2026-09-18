@@ -1,0 +1,145 @@
+name: ANVESHAN V1 CI
+
+on:
+  push:
+    branches: ["main", "master", "develop"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (migrations + V1 workflow tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: anveshan_ci
+          POSTGRES_USER: anveshan
+          POSTGRES_PASSWORD: anveshan_ci_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U anveshan -d anveshan_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify migrations upgrade and downgrade on PostgreSQL
+        env:
+          DATABASE_URL: postgresql+psycopg://anveshan:anveshan_ci_password@localhost:5432/anveshan_ci
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Run V1 workflow test-suite
+        env:
+          DATABASE_URL: sqlite:///./ci-anveshan.db
+          JWT_SECRET: ci-jwt-secret-that-is-at-least-32-bytes-long
+          APP_SECRET_KEY: ci-application-secret-key
+          DOCUMENT_ENCRYPTION_KEY: ${{ secrets.CI_DOCUMENT_ENCRYPTION_KEY || 'Y2ktZG9jdW1lbnQtZW5jcnlwdGlvbi1rZXktMzJieXRl' }}
+          BLOCKCHAIN_PROVIDER: local
+          GOV_ID_PROVIDER: local
+          REQUIRE_MFA: "false"
+        run: python -m pytest ../tests -v --tb=short
+
+      - name: Verify migrations from a clean checkout directory
+        env:
+          DATABASE_URL: sqlite:///./ci-clean.db
+        run: python -c "from app.main import _run_migrations; _run_migrations()"
+
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build
+        env:
+          VITE_API_URL: http://localhost:8000
+        run: npm run build
+
+  containers:
+    name: Container images build
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t anveshan-backend:ci ./backend
+
+      - name: Build frontend image
+        run: docker build -t anveshan-frontend:ci ./frontend
+
+      - name: Start the V1 stack and probe it end to end
+        run: |
+          cp .env.production.example .env.production
+          python - <<'PY'
+          import base64, os, pathlib, secrets
+          env = pathlib.Path(".env.production")
+          text = env.read_text(encoding="utf-8")
+          replacements = {
+              "REQUIRED_STRONG_DB_PASSWORD": secrets.token_urlsafe(24),
+              "REQUIRED_STRONG_RANDOM_SECRET": secrets.token_urlsafe(48),
+              "REQUIRED_STRONG_JWT_SECRET": secrets.token_urlsafe(48),
+              "REQUIRED_32_BYTE_BASE64_KEY": base64.urlsafe_b64encode(os.urandom(32)).decode(),
+          }
+          for placeholder, value in replacements.items():
+              text = text.replace(placeholder, value)
+          env.write_text(text, encoding="utf-8")
+          PY
+          docker compose --env-file .env.production up --build -d
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://localhost:8000/health; then break; fi
+            sleep 5
+          done
+          curl -fsS http://localhost:8000/health
+          curl -fsS http://localhost:8000/v1/health
+          curl -fsS http://localhost:8000/openapi.json > /dev/null
+          curl -fsS http://localhost:8080/healthz
+          docker compose --env-file .env.production logs --no-color > stack.log 2>&1
+
+      - name: Upload stack logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anveshan-stack-logs
+          path: stack.log
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: docker compose --env-file .env.production down -v || true

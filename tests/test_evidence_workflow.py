@@ -226,7 +226,7 @@ def test_mfa_is_required_when_enabled_for_the_environment(client: TestClient, mo
 
 def test_default_roles_and_abac_metadata_are_available(client: TestClient) -> None:
     db = client.testing_session()
-    assert {role.name for role in db.query(Role).all()} == {"user", "admin", "auditor"}
+    assert {role.name for role in db.query(Role).all()} == {"user", "admin", "auditor", "viewer"}
     db.close()
 
     case_response = client.post(
@@ -254,7 +254,7 @@ def test_default_roles_and_abac_metadata_are_available(client: TestClient) -> No
 
 
 def test_prototype_login_supports_all_default_roles(client: TestClient) -> None:
-    for role, password in (("investigator", "investigator"), ("auditor", "auditor"), ("admin", "admin")):
+    for role, password in (("investigator", "investigator"), ("auditor", "auditor"), ("admin", "admin"), ("viewer", "viewer")):
         response = client.post(
             "/v1/auth/prototype-login",
             json={"role": role, "password": password},

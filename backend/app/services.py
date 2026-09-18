@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import base64
+import logging
 from secrets import token_bytes
 import json
 import os
@@ -14,8 +15,21 @@ from sqlalchemy import Select, exists, select
 from sqlalchemy.orm import Session
 
 from . import models, schemas
+from .classification import ClassificationService
 from .storage import StorageError, StorageProvider
 from .ledger import AuditLedger
+
+logger = logging.getLogger("anveshan.services")
+# Step 12 — external record sources accepted by the integration layer.
+EXTERNAL_SOURCE_ALLOWLIST = ("criminal_records", "e_forensics", "nyaya")
+
+
+def validate_external_source(source_system: str) -> str:
+    """Normalize and allow-list an external record source system."""
+    normalized = (source_system or "").strip().lower().replace("-", "_")
+    if normalized not in EXTERNAL_SOURCE_ALLOWLIST:
+        raise ValueError(f"source_system must be one of: {', '.join(EXTERNAL_SOURCE_ALLOWLIST)}")
+    return normalized
 
 
 def _hash_password(password: str) -> str:
@@ -28,11 +42,16 @@ def _mfa_secret() -> str:
 
 
 class _HashingReader:
-    def __init__(self, source: BinaryIO, maximum_bytes: int) -> None:
+    def __init__(self, source: BinaryIO, maximum_bytes: int, capture_bytes: int = 0) -> None:
         self.source = source
         self.maximum_bytes = maximum_bytes
         self.hasher = hashlib.sha256()
         self.size = 0
+        # Bounded plaintext prefix used for ML classification / text extraction.
+        # Captured before the encryption wrapper sees the bytes, so extraction
+        # never needs a second (decrypting) pass over stored evidence.
+        self.capture_limit = capture_bytes
+        self.captured = bytearray()
 
     def read(self, size: int = -1) -> bytes:
         chunk = self.source.read(size)
@@ -41,7 +60,13 @@ class _HashingReader:
             if self.size > self.maximum_bytes:
                 raise ValueError("Uploaded file exceeds the configured size limit")
             self.hasher.update(chunk)
+            remaining = self.capture_limit - len(self.captured)
+            if remaining > 0:
+                self.captured.extend(chunk[:remaining])
         return chunk
+
+    def captured_bytes(self) -> bytes:
+        return bytes(self.captured)
 
 
 class UserService:
@@ -77,6 +102,7 @@ class RoleService:
             "user": "Standard investigator",
             "admin": "Case and system administrator",
             "auditor": "Evidence audit reviewer",
+            "viewer": "Read-only case viewer",
         }.items():
             if db.scalar(select(models.Role).where(models.Role.name == name)) is None:
                 db.add(models.Role(name=name, description=description))
@@ -214,6 +240,7 @@ class DocumentService:
         storage: StorageProvider,
         created_by_user_id: str | None = None,
         notes: str | None = None,
+        filename: str | None = None,
     ) -> models.DocumentVersion:
         document = db.get(models.Document, document_id)
         if document is None:
@@ -227,7 +254,11 @@ class DocumentService:
         )
         version_number = (latest_number or 0) + 1
         key = f"cases/{document.case_id}/documents/{document_id}/versions/{uuid4()}"
-        reader = _HashingReader(source, int(os.getenv("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024))))
+        reader = _HashingReader(
+            source,
+            int(os.getenv("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024))),
+            int(os.getenv("MAX_CLASSIFY_BYTES", str(1024 * 1024))),
+        )
         storage_uri: str | None = None
         try:
             storage_uri = storage.put(key, reader, content_type)
@@ -255,6 +286,15 @@ class DocumentService:
             AuditLedger.record(db, event_type="document_version_uploaded", actor_user_id=created_by_user_id,
                                case_id=document.case_id, document_id=document_id,
                                payload={"version_id": version.id, "content_hash": version.content_hash})
+            # V1 Step 9 — ML classification + tagging on ingestion. Suggestions are
+            # stored as pending metadata; a human still has to accept them.
+            if os.getenv("CLASSIFY_ON_UPLOAD", "true").lower() in {"1", "true", "yes", "on"}:
+                try:
+                    ClassificationService.suggest(
+                        db, document, reader.captured_bytes(), filename or document.title
+                    )
+                except Exception:  # noqa: BLE001 - classification must never block ingestion
+                    logger.warning("Classification failed for document %s", document_id, exc_info=True)
             db.commit()
             db.refresh(version)
             return version
@@ -364,6 +404,29 @@ class AccessService:
         )
 
     @staticmethod
+    def has_role(db: Session, user_id: str, *role_names: str) -> bool:
+        """Public role check used by admin/auditor-only endpoints."""
+        wanted = [name.lower() for name in role_names if name]
+        if not wanted:
+            return False
+        return bool(
+            db.scalar(
+                select(
+                    exists().where(
+                        models.UserRole.user_id == user_id,
+                        models.UserRole.role_id == models.Role.id,
+                        models.Role.name.in_(wanted),
+                    )
+                )
+            )
+        )
+
+    @staticmethod
+    def require_role(db: Session, user_id: str, *role_names: str) -> None:
+        if not AccessService.has_role(db, user_id, *role_names):
+            raise PermissionError(f"One of these roles is required: {', '.join(role_names)}")
+
+    @staticmethod
     def _has_grant(
         db: Session,
         user_id: str,
@@ -412,22 +475,9 @@ class AccessService:
         return grant
 
 
-class ClassificationService:
-    @staticmethod
-    def create_tag(db: Session, payload: schemas.TagCreate) -> models.ClassificationTag:
-        tag = models.ClassificationTag(name=payload.name, category=payload.category)
-        db.add(tag)
-        db.commit()
-        db.refresh(tag)
-        return tag
-
-    @staticmethod
-    def link_tag(db: Session, document_id: str, tag_id: str) -> models.DocumentTag:
-        link = models.DocumentTag(document_id=document_id, tag_id=tag_id)
-        db.add(link)
-        db.commit()
-        db.refresh(link)
-        return link
+# NOTE: ``ClassificationService`` lives in ``app.classification`` and is imported
+# at the top of this module. It must not be re-defined here: a local definition
+# shadows the import (and the ML hook below then fails with AttributeError).
 
 
 class RecordService:

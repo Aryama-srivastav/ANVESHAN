@@ -10,3 +10,10 @@ python-multipart>=0.0.9,<1.0
 supabase>=2.0,<3.0
 PyJWT>=2.8,<3.0
 cryptography>=43,<46
+
+# PostgreSQL driver (production DATABASE_URL: postgresql+psycopg://...)
+psycopg[binary]>=3.1,<4.0
+
+# Optional text extraction for PDF evidence (classification/search degrade
+# gracefully to title + metadata rules when this is unavailable).
+pypdf>=4.2,<6.0

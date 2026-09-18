@@ -133,6 +133,7 @@ class Document(Base):
         back_populates="document", cascade="all, delete-orphan"
     )
     access_grants: Mapped[list[AuthorizedAccess]] = relationship(back_populates="document")
+    transfers: Mapped[list[DocumentTransfer]] = relationship(back_populates="document", cascade="all, delete-orphan")
 
 
 class DocumentMetadata(Base):
@@ -282,4 +283,40 @@ class AuditLedgerRecord(Base):
     record_hash: Mapped[str] = mapped_column(String(128), unique=True)
     ledger_provider: Mapped[str] = mapped_column(String(40))
     transaction_id: Mapped[str] = mapped_column(String(255), unique=True)
+    # Exact timestamp string that was folded into ``record_hash``. Persisting it
+    # is what makes the hash independently re-computable for verification.
+    hashed_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+class DocumentTransfer(Base):
+    """Secure inter-department / inter-agency evidence handoff (V1 Step 10).
+
+    A transfer is *not* a copy of the file: it records who is handing what to
+    whom, for what stated purpose, and it seals the request with a transfer
+    hash. Accepting a transfer creates the recipient's purpose-bound access
+    grant and appends both events to the tamper-evident ledger.
+    """
+
+    __tablename__ = "document_transfers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    from_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    to_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    from_department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    to_department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    from_agency: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    to_agency: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    transfer_purpose: Mapped[str] = mapped_column(String(255))
+    access_level: Mapped[str] = mapped_column(String(50), default="read")
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    transfer_hash: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    transferred_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    document: Mapped[Document] = relationship(back_populates="transfers")
+    from_user: Mapped[User | None] = relationship(foreign_keys=[from_user_id])
+    to_user: Mapped[User] = relationship(foreign_keys=[to_user_id])
