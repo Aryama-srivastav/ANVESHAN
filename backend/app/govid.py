@@ -16,6 +16,8 @@ Privacy: only the last four characters of the identifier are ever persisted, so
 the verification record never becomes a secondary store of identity numbers.
 """
 
+from __future__ import annotations
+
 
 import os
 import re
