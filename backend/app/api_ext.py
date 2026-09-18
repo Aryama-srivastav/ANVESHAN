@@ -14,7 +14,6 @@ Keeping these in a separate module means ``api.py`` stays the stable core
 evidence API while the workflow surface grows here.
 """
 
-from __future__ import annotations
 
 from datetime import datetime, timezone
 
@@ -44,12 +43,12 @@ router = APIRouter(prefix="/v1", tags=["v1"], dependencies=[Depends(get_current_
 @router.get("/search", response_model=schemas.SearchResponseOut)
 def search_evidence(
     q: str = Query("", description="Free-text / natural-language query"),
-    case_id: str | None = None,
+    case_id: Optional[str] = None,
     from_date: datetime | None = Query(None, description="Only documents active on/after this time"),
     to_date: datetime | None = Query(None, description="Only documents active on/before this time"),
-    entity: str | None = Query(None, description="Named entity, tag or metadata value"),
-    doc_type: str | None = None,
-    sensitivity: str | None = None,
+    entity: Optional[str] = Query(None, description="Named entity, tag or metadata value"),
+    doc_type: Optional[str] = None,
+    sensitivity: Optional[str] = None,
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -80,8 +79,8 @@ def search_evidence(
 
 @router.get("/audit-trail", response_model=list[schemas.AuditTrailRecordOut])
 def list_audit_trail(
-    case_id: str | None = None,
-    document_id: str | None = None,
+    case_id: Optional[str] = None,
+    document_id: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -373,7 +372,7 @@ def accept_transfer(
 @router.post("/transfers/{transfer_id}/reject", response_model=schemas.TransferOut)
 def reject_transfer(
     transfer_id: str,
-    reason: str | None = Query(None),
+    reason: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> schemas.TransferOut:
@@ -569,7 +568,7 @@ def get_integrity_summary(
     items: list[schemas.IntegritySummaryItemOut] = []
     intact = True
     for version in DocumentService.list_versions(db, document_id):
-        observed: str | None = None
+        observed: Optional[str] = None
         item_status = "unverified"
         if verify:
             try:

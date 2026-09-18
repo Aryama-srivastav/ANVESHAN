@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -39,7 +37,10 @@ def _run_migrations() -> None:
 
     log = logging.getLogger("anveshan.migrations")
     log.info("migrations: starting Alembic migration run")
-    log.info("migrations: DATABASE_URL dialect = %s", DATABASE_URL.split(":")[0] if DATABASE_URL else "unknown")
+    log.info(
+        "migrations: DATABASE_URL dialect = %s",
+        DATABASE_URL.split(":")[0] if DATABASE_URL else "unknown",
+    )
 
     ini_path = Path(__file__).resolve().parents[1] / "alembic.ini"
     cfg = Config(str(ini_path))
@@ -56,9 +57,11 @@ def _run_migrations() -> None:
             needs_baseline = "alembic_version" not in tables
             if not needs_baseline:
                 with engine.connect() as connection:
-                    needs_baseline = connection.exec_driver_sql(
-                        "SELECT COUNT(*) FROM alembic_version"
-                    ).scalar_one() == 0
+                    needs_baseline = (
+                        connection.exec_driver_sql(
+                            "SELECT COUNT(*) FROM alembic_version"
+                        ).scalar_one() == 0
+                    )
             if needs_baseline:
                 log.info("migrations: baseline stamp (pre-Alembic schema detected)")
                 command.stamp(cfg, "head")
@@ -69,6 +72,12 @@ def _run_migrations() -> None:
     except Exception:
         log.exception("migrations: Alembic migration failed")
         raise
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # Run Alembic migrations — safe to call on every startup (idempotent).
+    _run_migrations()
 
     # Seed default roles if they don't exist yet.
     db = SessionLocal()

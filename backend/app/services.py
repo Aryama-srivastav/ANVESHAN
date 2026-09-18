@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import hashlib
 import base64
@@ -6,7 +5,7 @@ import logging
 from secrets import token_bytes
 import json
 import os
-from typing import BinaryIO
+from typing import Optional,  BinaryIO
 from uuid import uuid4
 
 from datetime import datetime, timezone
@@ -161,7 +160,7 @@ class CaseEventService:
     def create(
         db: Session,
         case_id: str,
-        actor_user_id: str | None,
+        actor_user_id: Optional[str],
         payload: schemas.CaseEventCreate,
     ) -> models.CaseEvent:
         previous_event = db.scalar(
@@ -243,11 +242,11 @@ class DocumentService:
         db: Session,
         document_id: str,
         source: BinaryIO,
-        content_type: str | None,
+        content_type: Optional[str],
         storage: StorageProvider,
-        created_by_user_id: str | None = None,
-        notes: str | None = None,
-        filename: str | None = None,
+        created_by_user_id: Optional[str] = None,
+        notes: Optional[str] = None,
+        filename: Optional[str] = None,
     ) -> models.DocumentVersion:
         document = db.get(models.Document, document_id)
         if document is None:
@@ -266,7 +265,7 @@ class DocumentService:
             int(os.getenv("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024))),
             int(os.getenv("MAX_CLASSIFY_BYTES", str(1024 * 1024))),
         )
-        storage_uri: str | None = None
+        storage_uri: Optional[str] = None
         try:
             storage_uri = storage.put(key, reader, content_type)
             if reader.size == 0:
@@ -368,9 +367,9 @@ class AccessService:
         document: models.Document,
         required_level: str = "read",
         *,
-        department: str | None = None,
-        agency: str | None = None,
-        sensitivity_level: str | None = None,
+        department: Optional[str] = None,
+        agency: Optional[str] = None,
+        sensitivity_level: Optional[str] = None,
     ) -> None:
         if AccessService._is_admin(db, user_id):
             return
@@ -438,12 +437,12 @@ class AccessService:
         db: Session,
         user_id: str,
         *,
-        case_id: str | None = None,
-        document_id: str | None = None,
+        case_id: Optional[str] = None,
+        document_id: Optional[str] = None,
         required_level: str,
-        department: str | None = None,
-        agency: str | None = None,
-        sensitivity_level: str | None = None,
+        department: Optional[str] = None,
+        agency: Optional[str] = None,
+        sensitivity_level: Optional[str] = None,
     ) -> bool:
         levels = {"read": 1, "write": 2, "admin": 3}
         minimum = levels[required_level]
