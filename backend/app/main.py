@@ -157,3 +157,29 @@ def _health() -> dict[str, str]:
         "status": "ok" if db_status == "ok" else "degraded",
         "db": db_status,
     }
+
+
+@app.get("/__diag", include_in_schema=False, tags=["ops"])
+def _diag() -> dict:
+    """TEMPORARY deployment diagnostic endpoint.
+
+    Reports the running interpreter, the process start time and the result of
+    generating the OpenAPI schema. Delete once the deployment is verified.
+    """
+    import platform
+    import sys
+    import traceback
+
+    result: dict = {
+        "marker": "diag-8aa2b5a",
+        "python": sys.version.split()[0],
+        "platform": platform.platform(),
+    }
+    try:
+        spec = app.openapi()
+        result["openapi"] = "ok"
+        result["openapi_paths"] = len(spec.get("paths", {}))
+    except Exception:  # pragma: no cover - diagnostic path
+        result["openapi"] = "failed"
+        result["traceback"] = traceback.format_exc()
+    return result
