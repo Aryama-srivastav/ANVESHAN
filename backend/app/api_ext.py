@@ -488,7 +488,13 @@ def list_case_external_records(
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
     try:
-        AccessService.require_case_access(db, current_user.id, case_id)
+        # External records carry agency-sensitive metadata: read is limited to
+        # admins plus users holding an explicit grant on the case.
+        if not (
+            AccessService._is_admin(db, current_user.id)
+            or AccessService._has_grant(db, current_user.id, case_id=case_id, required_level="read")
+        ):
+            raise PermissionError("User is not authorized for this case")
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     stmt = (

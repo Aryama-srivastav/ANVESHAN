@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import base64
+import builtins
 import logging
 from secrets import token_bytes, token_hex
 import json
@@ -136,7 +137,35 @@ class CaseService:
                 access_level="admin",
             )
         )
-        db.commit()
+        db.flush()
+        # Seal the creation itself into the case's tamper-evident event chain:
+        # what was created, by whom, from which system instance and under which
+        # signing configuration.
+        ledger_provider = os.getenv("BLOCKCHAIN_PROVIDER", "local").lower()
+        signing_key_path = os.getenv("SIGNING_KEY_PATH", "")
+        signing_reference = (
+            hashlib.sha256(f"{case.case_number}|{signing_key_path}|{ledger_provider}".encode()).hexdigest()
+            if signing_key_path
+            else None
+        )
+        CaseEventService.create(
+            db,
+            case.id,
+            actor_id,
+            schemas.CaseEventCreate(
+                event_type="case_created",
+                action=f"Case created: {case.title}",
+                details={
+                    "case_number": case.case_number,
+                    "title": case.title,
+                    "description": case.description,
+                    "created_at": case.created_at.isoformat() if case.created_at else None,
+                    "system": "ANVESHAN evidence vault",
+                    "ledger_provider": ledger_provider,
+                    "signing_reference": signing_reference,
+                },
+            ),
+        )
         db.refresh(case)
         return case
 
@@ -146,16 +175,10 @@ class CaseService:
         return list(db.scalars(stmt))
 
     @staticmethod
-    def list_for_user(db: Session, user_id: str) -> list[models.Case]:
-        if AccessService._is_admin(db, user_id):
-            return CaseService.list(db)
-        stmt: Select[tuple[models.Case]] = (
-            select(models.Case)
-            .join(models.AuthorizedAccess, models.AuthorizedAccess.case_id == models.Case.id)
-            .where(models.AuthorizedAccess.user_id == user_id)
-            .order_by(models.Case.created_at.desc())
-        )
-        return list(db.scalars(stmt).unique())
+    def list_for_user(db: Session, user_id: str) -> "builtins.list[models.Case]":
+        # V2 — cases are a shared register: every role sees every case. Write
+        # access is still controlled by AccessService.require_case_access.
+        return CaseService.list(db)
 
 
 class CaseEventService:
@@ -295,6 +318,34 @@ class DocumentService:
             AuditLedger.record(db, event_type="document_version_uploaded", actor_user_id=created_by_user_id,
                                case_id=document.case_id, document_id=document_id,
                                payload={"version_id": version.id, "content_hash": version.content_hash})
+            # Append the upload to the case's tamper-evident event chain so the
+            # case audit trail shows every piece of evidence, who filed it and
+            # when — including later updates (version_number > 1). Version 1 is
+            # the preserved original; every subsequent version is an amendment.
+            CaseEventService.create(
+                db,
+                document.case_id,
+                created_by_user_id,
+                schemas.CaseEventCreate(
+                    event_type="document_uploaded" if version_number == 1 else "document_version_added",
+                    action=(
+                        f"Evidence uploaded: {document.title}"
+                        if version_number == 1
+                        else f"Evidence updated: {document.title} (v{version_number})"
+                    ),
+                    details={
+                        "document_id": document.id,
+                        "document_title": document.title,
+                        "version_id": version.id,
+                        "version_number": version_number,
+                        "is_original": version_number == 1,
+                        "content_hash": version.content_hash,
+                        "filename": filename,
+                        "notes": notes,
+                        "uploaded_at": version.created_at.isoformat() if version.created_at else None,
+                    },
+                ),
+            )
             # V1 Step 9 — ML classification + tagging on ingestion. Suggestions are
             # stored as pending metadata; a human still has to accept them.
             if os.getenv("CLASSIFY_ON_UPLOAD", "true").lower() in {"1", "true", "yes", "on"}:
@@ -356,9 +407,44 @@ class DocumentService:
 
 
 class AccessService:
+    # Roles that may read every case / document without an explicit grant.
+    UNIVERSAL_READ_ROLES = ("admin", "auditor", "viewer")
+
     @staticmethod
     def require_case_access(db: Session, user_id: str, case_id: str, required_level: str = "read") -> None:
         if AccessService._is_admin(db, user_id):
+            return
+        if required_level == "read":
+            # Cases are a shared register — any authenticated officer may read.
+            # Investigators additionally get a durable case grant minted on
+            # first open, so they can immediately read/edit the case evidence.
+            if AccessService.has_role(db, user_id, "user") and not AccessService._has_grant(
+                db, user_id, case_id=case_id, required_level="read"
+            ):
+                db.add(
+                    models.AuthorizedAccess(
+                        user_id=user_id,
+                        case_id=case_id,
+                        purpose="role-based case access",
+                        access_level="write",
+                    )
+                )
+                db.commit()
+            return
+        # Write access: investigators ("user" role) and above operate on any
+        # case; the first write-touch mints a durable case grant so every
+        # subsequent document-level check (uploads, reads, transfers) passes.
+        if AccessService.has_role(db, user_id, "user"):
+            if not AccessService._has_grant(db, user_id, case_id=case_id, required_level=required_level):
+                db.add(
+                    models.AuthorizedAccess(
+                        user_id=user_id,
+                        case_id=case_id,
+                        purpose="role-based case access",
+                        access_level="write",
+                    )
+                )
+                db.commit()
             return
         if not AccessService._has_grant(db, user_id, case_id=case_id, required_level=required_level):
             raise PermissionError("User is not authorized for this case")
@@ -375,6 +461,10 @@ class AccessService:
         sensitivity_level: Optional[str] = None,
     ) -> None:
         if AccessService._is_admin(db, user_id):
+            return
+        # Viewers and auditors can inspect any evidence; other roles need a
+        # grant (their own, one on the document, or one on the parent case).
+        if required_level == "read" and AccessService.has_role(db, user_id, *AccessService.UNIVERSAL_READ_ROLES):
             return
         if AccessService._has_grant(
             db,

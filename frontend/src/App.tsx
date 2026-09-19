@@ -10,8 +10,11 @@ import {
   FileImage, FileAudio, FileVideo, File as FileLucide
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { VaultView, AuditLogsView, ClearanceView, SettingsView, DocumentDetailModal } from "./panels";
 
 // ── Type definitions ─────────────────────────────────────────────────
+type ActiveView = "overview" | "cases" | "vault" | "auditlogs" | "clearance" | "settings";
+
 interface CaseItem {
   id: string;
   case_number: string;
@@ -231,13 +234,14 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
 function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString("en-GB", { hour12: false }));
-  const [activeView, setActiveView] = useState<"overview" | "cases">("overview");
+  const [activeView, setActiveView] = useState<ActiveView>("overview");
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [currentUser, setCurrentUser] = useState<UserInfo | null>(null);
   const [openedCase, setOpenedCase] = useState<CaseItem | null>(null);
   const [loadingCases, setLoadingCases] = useState(true);
   const [toast, setToast] = useState("");
   const [showNewCaseModal, setShowNewCaseModal] = useState(false);
+  const [openDocId, setOpenDocId] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString("en-GB", { hour12: false })), 1000);
@@ -282,8 +286,20 @@ function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
     <DashboardShell sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeView={activeView} setActiveView={setActiveView} clearance={clearance} currentTime={currentTime} currentUser={currentUser} onLogout={onLogout} role={role}>
       {activeView === "overview" ? (
         <OverviewView cases={cases} activeCases={activeCases} role={role} loadingCases={loadingCases} onOpenCase={setOpenedCase} onCreateCase={() => setShowNewCaseModal(true)} />
-      ) : (
+      ) : activeView === "cases" ? (
         <CasesListView cases={cases} role={role} loading={loadingCases} onOpenCase={setOpenedCase} onCreateCase={() => setShowNewCaseModal(true)} />
+      ) : activeView === "vault" ? (
+        <VaultView onOpenDocument={setOpenDocId} />
+      ) : activeView === "auditlogs" ? (
+        <AuditLogsView role={role} />
+      ) : activeView === "clearance" ? (
+        <ClearanceView role={role} currentUser={currentUser} onNotify={notify} />
+      ) : (
+        <SettingsView role={role} currentUser={currentUser} onNotify={notify} />
+      )}
+
+      {openDocId && (
+        <DocumentDetailModal docId={openDocId} role={role} onClose={() => setOpenDocId(null)} onNotify={notify} />
       )}
 
       {showNewCaseModal && (
@@ -330,10 +346,10 @@ function DashboardShell({ children, sidebarOpen, setSidebarOpen, activeView, set
         <nav className="flex-1 py-6 flex flex-col gap-1.5 px-3">
           <NavItem icon={Zap} label="Overview" active={activeView === "overview"} isOpen={sidebarOpen} onClick={() => setActiveView("overview")} />
           <NavItem icon={FolderOpen} label="Case Files" active={activeView === "cases"} isOpen={sidebarOpen} onClick={() => setActiveView("cases")} />
-          <NavItem icon={Database} label="Evidence Vault" isOpen={sidebarOpen} onClick={() => setActiveView("cases")} />
-          <NavItem icon={FileText} label="Audit Logs" isOpen={sidebarOpen} onClick={() => { }} />
-          <NavItem icon={Shield} label="Clearance" isOpen={sidebarOpen} onClick={() => { }} />
-          <NavItem icon={Settings} label="Settings" isOpen={sidebarOpen} onClick={() => { }} />
+          <NavItem icon={Database} label="Evidence Vault" active={activeView === "vault"} isOpen={sidebarOpen} onClick={() => setActiveView("vault")} />
+          <NavItem icon={FileText} label="Audit Logs" active={activeView === "auditlogs"} isOpen={sidebarOpen} onClick={() => setActiveView("auditlogs")} />
+          <NavItem icon={Shield} label="Clearance" active={activeView === "clearance"} isOpen={sidebarOpen} onClick={() => setActiveView("clearance")} />
+          <NavItem icon={Settings} label="Settings" active={activeView === "settings"} isOpen={sidebarOpen} onClick={() => setActiveView("settings")} />
         </nav>
 
         <div className="px-4 pb-4 border-t border-white/5 pt-4">
@@ -408,7 +424,7 @@ function NavItem({ icon: Icon, label, active, isOpen, onClick }: any) {
 
 // ── Overview View ────────────────────────────────────────────────────
 function OverviewView({ cases, activeCases, role, loadingCases, onOpenCase, onCreateCase }: any) {
-  const canCreate = role === "investigator" || role === "admin";
+  const canCreate = role === "admin";
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="show" className="max-w-7xl mx-auto p-8 space-y-8">
@@ -478,7 +494,7 @@ function OverviewView({ cases, activeCases, role, loadingCases, onOpenCase, onCr
 // ── Cases List View ──────────────────────────────────────────────────
 function CasesListView({ cases, role, loading, onOpenCase, onCreateCase }: any) {
   const [search, setSearch] = useState("");
-  const canCreate = role === "investigator" || role === "admin";
+  const canCreate = role === "admin";
   const filtered = cases.filter((c: CaseItem) => `${c.case_number} ${c.title}`.toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -548,6 +564,7 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [loadingAudit, setLoadingAudit] = useState(true);
   const [modal, setModal] = useState<string | null>(null);
+  const [openDocId, setOpenDocId] = useState<string | null>(null);
 
   const canWrite = role === "investigator" || role === "admin";
 
@@ -620,7 +637,7 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
                 {docs.map((doc, i) => {
                   const DIcon = docIcon(doc.doc_type);
                   return (
-                    <motion.div key={doc.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                    <motion.div key={doc.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} onClick={() => setOpenDocId(doc.id)}
                       className="glass-panel rounded-xl p-5 border border-white/5 hover:border-cybergold/30 transition-all cursor-pointer group flex items-center gap-4"
                     >
                       <div className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-cybergold transition-colors">
@@ -657,14 +674,22 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
                     <div className={`w-4 h-4 rounded-full border-2 mt-1 shrink-0 relative z-10 ${ev.event_type.includes("upload") || ev.event_type.includes("version") ? "border-biometric bg-biometric/20 shadow-[0_0_8px_rgba(0,240,255,0.3)]" : ev.event_type.includes("sign") ? "border-cybergold bg-cybergold/20" : "border-slate-600 bg-obsidian-800"}`} />
                     <div className="flex-1 pb-6">
                       <div className="text-sm font-bold text-white">{ev.action}</div>
-                      <div className="text-[10px] font-mono text-slate-500 mt-1 flex items-center gap-3">
+                      <div className="text-[10px] font-mono text-slate-500 mt-1 flex items-center gap-3 flex-wrap">
                         <span>{ev.event_type}</span>
+                        {ev.actor_user_id && <span>by {ev.actor_user_id.slice(0, 8)}…</span>}
                         {ev.event_hash && (
                           <span className="px-2 py-0.5 rounded bg-obsidian-900 border border-white/5 text-biometric">
                             <Hash size={10} className="inline mr-1" />{ev.event_hash.slice(0, 16)}…
                           </span>
                         )}
                       </div>
+                      {ev.details && Object.keys(ev.details).length > 0 && (
+                        <div className="text-[9px] font-mono text-slate-600 mt-2 space-y-0.5">
+                          {Object.entries(ev.details).slice(0, 4).map(([k, v]) => (
+                            <div key={k}><span className="text-slate-500">{k}:</span> {String(v ?? "—").slice(0, 80)}</div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="text-[10px] font-mono text-slate-600 whitespace-nowrap mt-1">{formatDate(ev.created_at)}</div>
                   </div>
@@ -687,6 +712,11 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
         <ModalBackdrop onClose={() => setModal(null)}>
           <UploadEvidenceModal caseId={caseItem.id} onClose={() => setModal(null)} onSuccess={() => { setModal(null); loadDocs(); loadAudit(); onNotify("Evidence uploaded & sealed"); }} />
         </ModalBackdrop>
+      )}
+
+      {/* Document Detail Modal */}
+      {openDocId && (
+        <DocumentDetailModal docId={openDocId} role={role} onClose={() => setOpenDocId(null)} onNotify={onNotify} />
       )}
     </motion.div>
   );
