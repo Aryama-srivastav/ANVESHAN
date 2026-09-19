@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY index.html tsconfig.json tsconfig.node.json vite.config.js postcss.config.js tailwind.config.js ./
+COPY index.html tsconfig.json tsconfig.node.json vite.config.ts postcss.config.js tailwind.config.js ./
 COPY src ./src
 
 # Baked into the bundle at build time; override with --build-arg for other hosts.
