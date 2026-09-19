@@ -116,7 +116,7 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
     setLoading(role);
     setError("");
     try {
-      const res = await api.prototypeLogin(role, "prototype");
+      const res = await api.prototypeLogin(role, role);
       onLogin(res.access_token, role);
     } catch (err: any) {
       setError(err.message || "Authentication failed");
