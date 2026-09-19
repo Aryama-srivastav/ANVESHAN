@@ -125,7 +125,7 @@ export const api = {
     return apiRequest(`/v1/documents/${docId}/upload`, { method: "POST", body: fd });
   },
   verifyIntegrity: (docId, versionId) => apiRequest(`/v1/documents/${docId}/versions/${versionId}/verify-integrity`, { method: "POST" }),
-  getIntegritySummary: (docId) => apiRequest(`/v1/documents/${docId}/integrity-summary`),
+  getIntegritySummary: (docId, verify) => apiRequest(`/v1/documents/${docId}/integrity-summary${query({ verify: verify ? "true" : "" })}`),
   getOriginalRecord: (docId) => apiRequest(`/v1/documents/${docId}/original`),
   attachOriginalRecord: (docId, payload) => apiRequest(`/v1/documents/${docId}/original-record`, { method: "POST", body: JSON.stringify(payload) }),
   getDocumentAuditTrail: (docId) => apiRequest(`/v1/documents/${docId}/audit-trail`),

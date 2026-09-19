@@ -184,7 +184,9 @@ def test_case_custody_events_are_appended_and_chained(client: TestClient) -> Non
     )
     assert first_event.status_code == 201
     first_data = first_event.json()
-    assert first_data["previous_event_hash"] is None
+    # The creation event is the chain anchor appended by CaseService.create,
+    # so the first officer-recorded event links to it instead of being genesis.
+    assert first_data["previous_event_hash"] is not None
     assert first_data["event_hash"]
 
     second_event = client.post(
@@ -202,7 +204,7 @@ def test_case_custody_events_are_appended_and_chained(client: TestClient) -> Non
     events_response = client.get(f"/v1/cases/{case_id}/events")
     assert events_response.status_code == 200
     event_types = [item["event_type"] for item in events_response.json()]
-    assert event_types == ["acquisition", "review"]
+    assert event_types == ["case_created", "acquisition", "review"]
 
 
 def test_mfa_is_required_when_enabled_for_the_environment(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
