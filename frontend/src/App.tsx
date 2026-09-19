@@ -4,9 +4,9 @@ import { api } from "./api";
 import {
   ShieldAlert, Fingerprint, Lock, ChevronLeft, ChevronRight,
   FolderOpen, Database, FileText, Settings, Shield,
-  Search, Filter, Activity, Clock, Hash,
-  History, AlertTriangle, Eye, ShieldCheck, Plus, ArrowLeft,
-  Upload, X, ChevronDown, Zap, ClipboardList, Settings2,
+  Search, Clock, Hash,
+  ShieldCheck, Plus, ArrowLeft,
+  Upload, X, Zap, ClipboardList, Settings2,
   FileImage, FileAudio, FileVideo, File as FileLucide
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -49,13 +49,13 @@ interface UserInfo {
 }
 
 // ── Animation Variants ───────────────────────────────────────────────
-const staggerContainer = {
+const staggerContainer: import("framer-motion").Variants = {
   hidden: { opacity: 0 },
   show: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.15 } }
 };
-const staggerItem = {
+const staggerItem: import("framer-motion").Variants = {
   hidden: { opacity: 0, y: 24 },
-  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 260, damping: 24 } }
+  show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 260, damping: 24 } }
 };
 const fadeSlideUp = {
   initial: { opacity: 0, y: 16 },
@@ -693,7 +693,7 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
 }
 
 // ── Metric Card ──────────────────────────────────────────────────────
-function MetricCard({ title, value, icon: Icon, delay, accent }: any) {
+function MetricCard({ title, value, icon: Icon, accent }: any) {
   return (
     <motion.div variants={staggerItem} className="glass-panel rounded-xl p-6 glow-border relative overflow-hidden group hover:glow-border-hover">
       <div className="absolute top-4 right-4 opacity-10 group-hover:opacity-20 transition-opacity duration-500">

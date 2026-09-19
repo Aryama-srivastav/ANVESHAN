@@ -44,6 +44,28 @@ class PrototypeLoginRequest(BaseModel):
     password: str
 
 
+class ViewerRegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    full_name: str = Field(min_length=1, max_length=255)
+
+
+class ViewerLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ViewerVerifyRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class ViewerAuthOut(BaseModel):
+    message: str
+    mfa_required: bool = True
+    development_code: Optional[str] = None
+
+
 class PrototypeLoginOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -88,7 +110,7 @@ class MfaSetupOut(BaseModel):
 
 
 class CaseCreate(BaseModel):
-    case_number: str
+    case_number: Optional[str] = None
     title: str
     description: Optional[str] = None
 
