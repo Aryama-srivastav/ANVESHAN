@@ -73,6 +73,26 @@ class UserRole(Base):
     role: Mapped[Role] = relationship(back_populates="user_roles")
 
 
+class EmailOtp(Base):
+    """Email OTP challenge for viewer registration / login (V1 viewer auth).
+
+    One row per email; a new code overwrites the previous one. The code hash
+    (SHA-256 hex) is stored — never the plaintext code.
+    """
+
+    __tablename__ = "email_otps"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    code_hash: Mapped[str] = mapped_column(String(128))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
 class Case(Base):
     __tablename__ = "cases"
 

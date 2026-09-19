@@ -81,6 +81,9 @@ export function query(params) {
 export const api = {
   // ── Auth ────────────────────────────────────────────────────────────
   prototypeLogin: (role, password) => apiRequest("/v1/auth/prototype-login", { method: "POST", body: JSON.stringify({ role, password }) }),
+  viewerRegister: (email, password, fullName) => apiRequest("/v1/auth/viewer/register", { method: "POST", body: JSON.stringify({ email, password, full_name: fullName }) }),
+  viewerLogin: (email, password) => apiRequest("/v1/auth/viewer/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  viewerVerify: (email, code) => apiRequest("/v1/auth/viewer/verify", { method: "POST", body: JSON.stringify({ email, code }) }),
   login: (email, password) => apiRequest("/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   verifyMfa: (challengeToken, code) => apiRequest("/v1/auth/mfa/verify", { method: "POST", body: JSON.stringify({ challenge_token: challengeToken, code }) }),
   requestPasswordReset: (email) => apiRequest("/v1/auth/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),

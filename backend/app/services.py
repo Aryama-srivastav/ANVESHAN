@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import base64
 import logging
-from secrets import token_bytes
+from secrets import token_bytes, token_hex
 import json
 import os
 from typing import Optional,  BinaryIO
@@ -120,8 +120,9 @@ class RoleService:
 class CaseService:
     @staticmethod
     def create(db: Session, payload: schemas.CaseCreate, actor_id: str) -> models.Case:
+        case_number = payload.case_number or f"CASE-{token_hex(2).upper()}-{token_hex(2).upper()}"
         case = models.Case(
-            case_number=payload.case_number,
+            case_number=case_number,
             title=payload.title,
             description=payload.description,
         )

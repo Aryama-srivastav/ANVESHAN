@@ -17,11 +17,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import User
+from .email_otp import OTP_MAX_ATTEMPTS, issue_otp
+from .models import EmailOtp, User
 from .prototype_auth import DEFAULT_PROTOTYPE_LOGINS, authenticate_default_user, ensure_default_users
 from .services import RoleService
 from .schemas import (LoginChallengeOut, LoginRequest, MfaSetupOut, MfaVerifyRequest, PasswordResetConfirm,
-                      PasswordResetRequest, PasswordResetRequestOut, PrototypeLoginOut, PrototypeLoginRequest)
+                      PasswordResetRequest, PasswordResetRequestOut, PrototypeLoginOut, PrototypeLoginRequest,
+                      ViewerAuthOut, ViewerLoginRequest, ViewerRegisterRequest, ViewerVerifyRequest, UserOut)
 
 bearer = HTTPBearer(auto_error=False)
 auth_router = APIRouter(prefix="/v1/auth", tags=["auth"])
@@ -65,6 +67,11 @@ def _access_token(user: User, *, mfa_verified: bool) -> str:
 def prototype_login(payload: PrototypeLoginRequest, db: Session = Depends(get_db)) -> PrototypeLoginOut:
     if payload.role not in DEFAULT_PROTOTYPE_LOGINS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown prototype role")
+    if payload.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewer access requires email registration and verification. Use /v1/auth/viewer/register.",
+        )
     RoleService.ensure_default_roles(db)
     ensure_default_users(db)
     user = authenticate_default_user(db, payload.role, payload.password)
@@ -72,7 +79,88 @@ def prototype_login(payload: PrototypeLoginRequest, db: Session = Depends(get_db
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid prototype credentials")
     # Explicitly labelled demo identities are the only MFA bypass.
     token = _access_token(user, mfa_verified=True)
-    return PrototypeLoginOut(access_token=token, role=payload.role, user=user)
+    return PrototypeLoginOut(access_token=token, role=payload.role, user=UserOut.model_validate(user))
+
+
+@auth_router.post("/viewer/register", response_model=ViewerAuthOut)
+def viewer_register(payload: ViewerRegisterRequest, db: Session = Depends(get_db)) -> ViewerAuthOut:
+    email = payload.email.lower()
+    RoleService.ensure_default_roles(db)
+    existing_user = db.scalar(select(User).where(User.email == email))
+    if existing_user is not None and not verify_password(payload.password, existing_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered. Use viewer login.")
+    code, sent = issue_otp(
+        db,
+        email=email,
+        full_name=payload.full_name,
+        password_hash=None if existing_user is not None else _password_hash(payload.password),
+    )
+    message = "Verification code sent to your email." if sent else "Verification code issued."
+    if os.getenv("APP_ENV", "development").lower() != "production" or not sent:
+        return ViewerAuthOut(message=message, mfa_required=True, development_code=code)
+    return ViewerAuthOut(message=message, mfa_required=True)
+
+
+@auth_router.post("/viewer/login", response_model=ViewerAuthOut)
+def viewer_login(payload: ViewerLoginRequest, db: Session = Depends(get_db)) -> ViewerAuthOut:
+    email = payload.email.lower()
+    user = db.scalar(select(User).where(User.email == email))
+    stored_hash = user.password_hash if user is not None else None
+    if stored_hash is None:
+        challenge = db.scalar(select(EmailOtp).where(EmailOtp.email == email))
+        stored_hash = challenge.password_hash if challenge is not None else None
+    if stored_hash is None or not verify_password(payload.password, stored_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if user is not None:
+        roles = {user_role.role.name for user_role in user.roles} if user.roles else set()
+        if roles and "viewer" not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This login channel is for viewer accounts only")
+    code, sent = issue_otp(db, email=email)
+    message = "Verification code sent to your email." if sent else "Verification code issued."
+    if os.getenv("APP_ENV", "development").lower() != "production" or not sent:
+        return ViewerAuthOut(message=message, mfa_required=True, development_code=code)
+    return ViewerAuthOut(message=message, mfa_required=True)
+
+
+@auth_router.post("/viewer/verify", response_model=PrototypeLoginOut)
+def viewer_verify(payload: ViewerVerifyRequest, db: Session = Depends(get_db)) -> PrototypeLoginOut:
+    import hashlib
+
+    from . import models
+
+    email = payload.email.lower()
+    challenge = db.scalar(select(EmailOtp).where(EmailOtp.email == email))
+    if challenge is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No verification challenge for this email")
+    if (challenge.attempts or 0) >= OTP_MAX_ATTEMPTS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts. Request a new code.")
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if challenge.expires_at is not None and now > challenge.expires_at:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Code expired. Request a new one.")
+    expected = hashlib.sha256(payload.code.encode()).hexdigest()
+    if not hmac.compare_digest(expected, challenge.code_hash):
+        challenge.attempts = (challenge.attempts or 0) + 1
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code")
+    RoleService.ensure_default_roles(db)
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None:
+        if not challenge.password_hash:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Registration incomplete. Register again.")
+        user = User(email=email, full_name=challenge.full_name or email, password_hash=challenge.password_hash, is_active=True)
+        db.add(user)
+        db.flush()
+        viewer_role = db.scalar(select(models.Role).where(models.Role.name == "viewer"))
+        if viewer_role is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Viewer role not configured")
+        db.add(models.UserRole(user_id=user.id, role_id=viewer_role.id))
+    elif not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not active")
+    challenge.verified = True
+    challenge.attempts = 0
+    db.commit()
+    token = _access_token(user, mfa_verified=True)
+    return PrototypeLoginOut(access_token=token, role="viewer", user=UserOut.model_validate(user))
 
 
 @auth_router.post("/login", response_model=LoginChallengeOut)
