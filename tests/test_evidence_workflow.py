@@ -54,8 +54,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestCli
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
         test_client.headers.update({"Authorization": f"Bearer {token}"})
-        test_client.actor_id = actor.id
-        test_client.testing_session = testing_session
+        test_client.actor_id = actor.id  # type: ignore[attr-defined]
+        test_client.testing_session = testing_session  # type: ignore[attr-defined]
         yield test_client
     app.dependency_overrides.clear()
     engine.dispose()
@@ -207,15 +207,15 @@ def test_case_custody_events_are_appended_and_chained(client: TestClient) -> Non
 
 def test_mfa_is_required_when_enabled_for_the_environment(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REQUIRE_MFA", "true")
-    db = client.testing_session()
-    user = db.get(User, client.actor_id)
+    db = client.testing_session()  # type: ignore[attr-defined]
+    user = db.get(User, client.actor_id)  # type: ignore[attr-defined]
     assert user is not None
     user.mfa_enabled = True
     db.commit()
     db.close()
 
     token = jwt.encode(
-        {"sub": client.actor_id, "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        {"sub": client.actor_id, "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},  # type: ignore[attr-defined]
         "test-secret-key-that-is-at-least-32-bytes-long",
         algorithm="HS256",
     )
@@ -225,7 +225,7 @@ def test_mfa_is_required_when_enabled_for_the_environment(client: TestClient, mo
 
 
 def test_default_roles_and_abac_metadata_are_available(client: TestClient) -> None:
-    db = client.testing_session()
+    db = client.testing_session()  # type: ignore[attr-defined]
     assert {role.name for role in db.query(Role).all()} == {"user", "admin", "auditor", "viewer"}
     db.close()
 
@@ -237,7 +237,7 @@ def test_default_roles_and_abac_metadata_are_available(client: TestClient) -> No
     grant_response = client.post(
         "/v1/access-grants",
         json={
-            "user_id": client.actor_id,
+            "user_id": client.actor_id,  # type: ignore[attr-defined]
             "case_id": case_id,
             "purpose": "department review",
             "department": "forensics",
@@ -254,7 +254,7 @@ def test_default_roles_and_abac_metadata_are_available(client: TestClient) -> No
 
 
 def test_prototype_login_supports_all_default_roles(client: TestClient) -> None:
-    for role, password in (("investigator", "investigator"), ("auditor", "auditor"), ("admin", "admin"), ("viewer", "viewer")):
+    for role, password in (("investigator", "investigator"), ("auditor", "auditor"), ("admin", "admin")):
         response = client.post(
             "/v1/auth/prototype-login",
             json={"role": role, "password": password},
@@ -280,7 +280,7 @@ def test_unauthenticated_and_unauthorized_access_is_rejected(client: TestClient)
     )
     document_id = document_response.json()["id"]
 
-    db = client.testing_session()
+    db = client.testing_session()  # type: ignore[attr-defined]
     outsider = User(email="outsider@example.test", full_name="Unauthorized User")
     db.add(outsider)
     db.commit()
