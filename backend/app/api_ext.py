@@ -17,6 +17,7 @@ evidence API while the workflow surface grows here.
 from __future__ import annotations
 
 
+import json
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -32,10 +33,24 @@ from .db import get_db
 from .govid import GovIdError, GovIdVerificationAdapter, mask_identifier
 from .ledger import AuditLedger
 from .search import SearchService
-from .services import AccessService, DocumentService, validate_external_source
+from .services import (
+    AccessService,
+    CaseEventService,
+    DepartmentRequestService,
+    DepartmentService,
+    DEPARTMENT_MATRIX,
+    DocumentService,
+    validate_external_source,
+)
 from .transfers import TransferError, TransferService
 
 router = APIRouter(prefix="/v1", tags=["v1"], dependencies=[Depends(get_current_user)])
+
+# Unauthenticated surface: citizens raise and track Nyaya complaints with just
+# their email and the returned token.
+public_router = APIRouter(prefix="/v1", tags=["public"])
+
+DEPARTMENT_KEYS = frozenset(DEPARTMENT_MATRIX.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -556,6 +571,117 @@ def get_original_record(
     return record
 
 
+@router.get("/documents/{document_id}/lineage", response_model=schemas.DocumentLineageOut)
+def verify_document_lineage(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.DocumentLineageOut:
+    """Cross-version tamper verification (V2).
+
+    Three checks per document:
+    * **file** — re-hash stored bytes vs the recorded content hash;
+    * **record** — compare the recorded content hash against the hash that was
+      folded into the hash-chained case event when the version was uploaded
+      (detects database-row tampering that keeps file and row consistent);
+    * **chain** — recompute every case event hash of the parent case (detects
+      event/ledger tampering).
+    """
+    import hashlib
+    from datetime import timezone
+
+    from .storage import get_storage
+
+    document = DocumentService.get(db, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    try:
+        AccessService.require_document_access(db, current_user.id, document)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    issues: list[str] = []
+
+    # --- Chain check: recompute every case event hash of the parent case. ---
+    # CaseEventService hashes f"{case_id}|{type}|{action}|{details}|{prev}|{actor}|{created_at.isoformat()}";
+    # timestamps were aware UTC at write time, so restore tz before re-serialising.
+    events = CaseEventService.list_for_case(db, document.case_id)
+    chain_broken = False
+    for event in events:
+        created_at = event.created_at
+        if created_at is not None and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        payload_block = (
+            f"{event.case_id}|{event.event_type}|{event.action}|{event.details or ''}|{event.previous_event_hash or ''}|"
+            f"{event.actor_user_id or ''}|{created_at.isoformat()}"
+        )
+        if hashlib.sha256(payload_block.encode("utf-8")).hexdigest() != event.event_hash:
+            chain_broken = True
+            issues.append(f"case event {event.id[:8]} hash mismatch — event chain has been tampered with")
+
+    # --- Anchor map: content hash recorded at upload time, per version. ---
+    anchored: dict[str, str] = {}
+    for event in events:
+        if not event.details:
+            continue
+        try:
+            details = json.loads(event.details)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(details, dict) or details.get("document_id") != document.id:
+            continue
+        version_id = details.get("version_id")
+        content_hash = details.get("content_hash")
+        if version_id and content_hash and version_id not in anchored:
+            anchored[version_id] = str(content_hash)
+
+    # --- Per-version: file bytes vs recorded hash, record vs chain anchor. ---
+    items: list[schemas.LineageVersionOut] = []
+    storage = get_storage()
+    for version in DocumentService.list_versions(db, document_id):
+        recorded = version.content_hash
+        byte_status = "unverified"
+        result = DocumentService.verify_integrity(db, document_id, version.id, storage)
+        if result is None:
+            byte_status = "unreadable"
+            issues.append(f"version v{version.version_number}: stored file could not be read")
+        elif result.verified:
+            byte_status = "verified"
+        else:
+            byte_status = "tampered-file"
+            issues.append(f"version v{version.version_number}: stored file bytes do not match the recorded hash")
+
+        anchored_hash = anchored.get(version.id)
+        if anchored_hash is None:
+            record_status = "unanchored"
+        elif anchored_hash == recorded:
+            record_status = "anchored"
+        else:
+            record_status = "tampered-record"
+            issues.append(
+                f"version v{version.version_number}: recorded hash no longer matches the hash "
+                "sealed in the audit chain at upload time — evidence record has been altered"
+            )
+
+        items.append(
+            schemas.LineageVersionOut(
+                version_id=version.id,
+                version_number=version.version_number,
+                is_original=version.version_number == 1,
+                recorded_hash=recorded,
+                anchored_hash=anchored_hash,
+                byte_status=byte_status,
+                record_status=record_status,
+            )
+        )
+
+    if chain_broken:
+        intact = False
+    else:
+        intact = not issues
+    return schemas.DocumentLineageOut(document_id=document_id, intact=intact, issues=issues, versions=items)
+
+
 @router.get("/documents/{document_id}/integrity-summary", response_model=schemas.IntegritySummaryOut)
 def get_integrity_summary(
     document_id: str,
@@ -644,5 +770,205 @@ def get_backup_status(
     try:
         AccessService.require_role(db, current_user.id, "admin")
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+                raise HTTPException(status_code=403, detail=str(exc)) from exc
     return schemas.BackupStatusOut(**backup_status())
+
+
+# ---------------------------------------------------------------------------
+# Step 10 (extension) — Inter-department document access requests
+# ---------------------------------------------------------------------------
+
+
+@router.post("/department-requests", response_model=schemas.DepartmentRequestOut)
+def create_department_request(
+    payload: schemas.DepartmentRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.DepartmentRequestOut:
+    """File a cross-department document access request.
+
+    Any authenticated user may file a request for a document they can see.
+    Members of the destination department (or admins) will review it via
+    ``PATCH /department-requests/{request_id}``.
+    """
+    try:
+        req = DepartmentRequestService.create(db, payload, current_user.id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _department_request_to_out(db, req)
+
+
+@router.get("/department-requests", response_model=list[schemas.DepartmentRequestOut])
+def list_department_requests(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> list[schemas.DepartmentRequestOut]:
+    """List department access requests visible to the current user.
+
+    * Admins see every request.
+    * Other users see requests they filed or that are addressed to their
+      department.
+    """
+    reqs = DepartmentRequestService.list_for_user(db, current_user.id)
+    return [_department_request_to_out(db, r) for r in reqs]
+
+
+@router.patch("/department-requests/{request_id}", response_model=schemas.DepartmentRequestOut)
+def review_department_request(
+    request_id: str,
+    payload: schemas.DepartmentRequestAction,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.DepartmentRequestOut:
+    """Approve or reject a department access request (destination dept or admin)."""
+    try:
+        req = DepartmentRequestService.action(db, request_id, payload, current_user.id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return _department_request_to_out(db, req)
+
+
+def _department_request_to_out(db: Session, req: models.DepartmentRequest) -> schemas.DepartmentRequestOut:
+    document = db.get(models.Document, req.document_id)
+    from_user = db.get(models.User, req.from_user_id)
+    reviewer = db.get(models.User, req.reviewed_by_user_id) if req.reviewed_by_user_id else None
+    return schemas.DepartmentRequestOut(
+        id=req.id,
+        document_id=req.document_id,
+        document_title=document.title if document else None,
+        from_user_id=req.from_user_id,
+        from_user_name=from_user.full_name if from_user else None,
+        from_department=req.from_department or (from_user.department if from_user else None),
+        to_department=req.to_department,
+        purpose=req.purpose,
+        requested_access_level=req.requested_access_level,
+        status=req.status,
+        review_notes=req.review_notes,
+        reviewed_by_user_id=req.reviewed_by_user_id,
+        reviewed_by_name=reviewer.full_name if reviewer else None,
+        created_at=req.created_at,
+        reviewed_at=req.reviewed_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Case-lifecycle departments & public complaint desk (Nyaya)
+# ---------------------------------------------------------------------------
+
+
+def _department_record_to_out(db: Session, record: models.DepartmentRecord) -> schemas.DepartmentRecordOut:
+    case = db.get(models.Case, record.case_id) if record.case_id else None
+    author = db.get(models.User, record.created_by_user_id) if record.created_by_user_id else None
+    return schemas.DepartmentRecordOut(
+        id=record.id,
+        department=record.department,
+        case_id=record.case_id,
+        case_number=case.case_number if case else None,
+        title=record.title,
+        body=record.body,
+        created_by_user_id=record.created_by_user_id,
+        created_by_name=author.full_name if author else None,
+        created_at=record.created_at,
+    )
+
+
+@router.get("/departments", response_model=list[schemas.DepartmentOut])
+def list_departments(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> list[schemas.DepartmentOut]:
+    """Lifecycle departments annotated with the caller's permissions."""
+    return [schemas.DepartmentOut(**d) for d in DepartmentService.matrix_for(db, current_user)]
+
+
+@router.get("/departments/{key}/records", response_model=list[schemas.DepartmentRecordOut])
+def list_department_records(
+    key: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> list[schemas.DepartmentRecordOut]:
+    """Records in a department dataset (role matrix enforced)."""
+    if key not in DEPARTMENT_KEYS:
+        raise HTTPException(status_code=404, detail=f"Unknown department '{key}'")
+    try:
+        DepartmentService.assert_can_view(db, current_user, key)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return [_department_record_to_out(db, r) for r in DepartmentService.list_records(db, key)]
+
+
+@router.post("/departments/{key}/records", response_model=schemas.DepartmentRecordOut)
+def create_department_record(
+    key: str,
+    payload: schemas.DepartmentRecordCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.DepartmentRecordOut:
+    """File a new entry into a department dataset (operator roles only)."""
+    if key not in DEPARTMENT_KEYS:
+        raise HTTPException(status_code=404, detail=f"Unknown department '{key}'")
+    try:
+        DepartmentService.assert_can_operate(db, current_user, key)
+        record = DepartmentService.create_record(db, key, payload, current_user.id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return _department_record_to_out(db, record)
+
+
+# ── Public complaint desk (no authentication: email + token only) ──────
+
+
+@public_router.post("/complaints", response_model=schemas.ComplaintOut, status_code=201)
+def raise_complaint(
+    payload: schemas.ComplaintCreate,
+    db: Session = Depends(get_db),
+) -> schemas.ComplaintOut:
+    """Citizens raise a complaint with just their email and get a tracking token."""
+    try:
+        return DepartmentService.create_complaint(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@public_router.get("/complaints/{token}", response_model=schemas.ComplaintOut)
+def track_complaint(
+    token: str,
+    db: Session = Depends(get_db),
+) -> schemas.ComplaintOut:
+    """Track a complaint by its token — no login required."""
+    complaint = DepartmentService.get_by_token(db, token)
+    if complaint is None:
+        raise HTTPException(status_code=404, detail="No complaint found for that token")
+    return complaint
+
+
+@router.get("/complaints", response_model=list[schemas.ComplaintOut])
+def list_complaints(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> list[schemas.ComplaintOut]:
+    """Complaint desk queue (admin + auditor)."""
+    try:
+        AccessService.require_role(db, current_user.id, "admin", "auditor")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return DepartmentService.list_complaints(db)
+
+
+@router.patch("/complaints/{complaint_id}", response_model=schemas.ComplaintOut)
+def update_complaint_status(
+    complaint_id: str,
+    payload: schemas.ComplaintStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.ComplaintOut:
+    """Move a complaint through open → acknowledged → closed (admin only)."""
+    try:
+        AccessService.require_role(db, current_user.id, "admin")
+        return DepartmentService.set_complaint_status(db, complaint_id, payload.status)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from .api import router
-from .api_ext import router as extensions_router
+from .api_ext import router as extensions_router, public_router
 from .auth import auth_router
 from .db import SessionLocal, engine
 from .services import RoleService
@@ -127,6 +127,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(router)
 app.include_router(extensions_router)
+app.include_router(public_router)
 
 
 @app.get("/health", tags=["ops"])

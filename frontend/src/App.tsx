@@ -5,15 +5,16 @@ import {
   ShieldAlert, Fingerprint, Lock, ChevronLeft, ChevronRight,
   FolderOpen, Database, FileText, Settings, Shield,
   Search, Clock, Hash,
-  ShieldCheck, Plus, ArrowLeft,
+  ShieldCheck, Plus, ArrowLeft, Brain,
   Upload, X, Zap, ClipboardList, Settings2,
-  FileImage, FileAudio, FileVideo, File as FileLucide
+  FileImage, FileAudio, FileVideo, File as FileLucide,
+  Building2, KeyRound, Mail, ArrowRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { VaultView, AuditLogsView, ClearanceView, SettingsView, DocumentDetailModal } from "./panels";
+import { VaultView, AuditLogsView, ClearanceView, SettingsView, DepartmentsView, DocumentDetailModal } from "./panels";
 
 // ── Type definitions ─────────────────────────────────────────────────
-type ActiveView = "overview" | "cases" | "vault" | "auditlogs" | "clearance" | "settings";
+type ActiveView = "overview" | "cases" | "vault" | "departments" | "auditlogs" | "clearance" | "settings";
 
 interface CaseItem {
   id: string;
@@ -49,6 +50,8 @@ interface UserInfo {
   full_name: string;
   email: string;
   roles: string[];
+  department?: string | null;
+  agency?: string | null;
 }
 
 // ── Animation Variants ───────────────────────────────────────────────
@@ -114,6 +117,21 @@ export default function App() {
 function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [mode, setMode] = useState<"prototype" | "officer" | "viewer">("prototype");
+
+  // Officer (email + password + optional MFA) state
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+
+  // Viewer (register → OTP → verify) state
+  const [viewerEmail, setViewerEmail] = useState("");
+  const [viewerPassword, setViewerPassword] = useState("");
+  const [viewerName, setViewerName] = useState("");
+  const [viewerStage, setViewerStage] = useState<"register" | "verify">("register");
+  const [viewerCode, setViewerCode] = useState("");
+  const [devCode, setDevCode] = useState<string | null>(null);
 
   async function doLogin(role: string) {
     setLoading(role);
@@ -123,6 +141,96 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
       onLogin(res.access_token, role);
     } catch (err: any) {
       setError(err.message || "Authentication failed");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  /** Officer credentials login — may return an MFA challenge instead of a token. */
+  async function officerLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading("officer");
+    setError("");
+    try {
+      const res = await api.login(email, password);
+      if (res.mfa_required && res.challenge_token) {
+        setChallengeToken(res.challenge_token);
+        setError("");
+        return;
+      }
+      if (!res.access_token) throw new Error("No access token returned");
+      const me = await api.getUserMe().catch(() => null);
+      onLogin(res.access_token, me?.roles?.[0] || "investigator");
+    } catch (err: any) {
+      setError(err.message || "Authentication failed");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  /** Second factor: exchange the challenge token + 6-digit TOTP for a session. */
+  async function officerVerifyMfa(e: React.FormEvent) {
+    e.preventDefault();
+    if (!challengeToken) return;
+    setLoading("mfa");
+    setError("");
+    try {
+      const res = await api.verifyMfa(challengeToken, mfaCode);
+      const token = res.access_token || res.token;
+      if (!token) throw new Error("MFA verification did not return a token");
+      const me = await api.getUserMe().catch(() => null);
+      onLogin(token, me?.roles?.[0] || "investigator");
+    } catch (err: any) {
+      setError(err.message || "MFA verification failed");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  /** Viewer registration — issues an OTP challenge (dev code surfaced locally). */
+  async function viewerRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading("viewer");
+    setError("");
+    try {
+      const res = await api.viewerRegister(viewerEmail, viewerPassword, viewerName);
+      setDevCode(res.development_code || null);
+      setViewerStage("verify");
+    } catch (err: any) {
+      setError(err.message || "Registration failed");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  /** Viewer login for an already-registered account — issues a fresh OTP. */
+  async function viewerRequestOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading("viewer");
+    setError("");
+    try {
+      const res = await api.viewerLogin(viewerEmail, viewerPassword);
+      setDevCode(res.development_code || null);
+      setViewerStage("verify");
+    } catch (err: any) {
+      setError(err.message || "Login failed");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  /** Viewer OTP verification — exchange the emailed code for a viewer session. */
+  async function viewerVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading("viewer");
+    setError("");
+    try {
+      const res = await api.viewerVerify(viewerEmail, viewerCode);
+      const token = res.access_token || res.token;
+      if (!token) throw new Error("Viewer verification did not return a token");
+      onLogin(token, "viewer");
+    } catch (err: any) {
+      setError(err.message || "Verification failed");
     } finally {
       setLoading(null);
     }
@@ -169,27 +277,144 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
             Authenticate with your assigned clearance level. All sessions are encrypted and monitored.
           </p>
 
-          <div className="space-y-3">
-            {roles.map((r, i) => (
-              <motion.button
-                key={r}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.3 + i * 0.1 }}
-                onClick={() => doLogin(r)}
-                disabled={loading !== null}
-                className={`w-full h-14 rounded-xl border font-mono text-sm tracking-widest font-bold flex items-center px-5 gap-4 transition-all duration-300 disabled:opacity-40 group
-                  ${r === "investigator" ? "bg-cybergold/10 border-cybergold/40 text-cybergold hover:bg-cybergold hover:text-obsidian-900" :
-                    r === "admin" ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white" :
-                      r === "auditor" ? "bg-biometric/10 border-biometric/30 text-biometric hover:bg-biometric hover:text-obsidian-900" :
-                        "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
-                  }`}
+          {/* Authentication mode selector */}
+          <div className="flex gap-2 mb-6">
+            {([["prototype", "ROLE ACCESS"], ["officer", "OFFICER LOGIN"], ["viewer", "PUBLIC VIEWER"]] as [typeof mode, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => { setMode(key); setError(""); setChallengeToken(null); }}
+                className={`flex-1 h-9 rounded-lg font-mono text-[9px] font-bold tracking-widest transition-all ${mode === key ? "bg-white text-obsidian-900" : "bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"}`}
               >
-                <Fingerprint size={18} className="group-hover:animate-pulse" />
-                {loading === r ? "AUTHENTICATING..." : r.toUpperCase()}
-              </motion.button>
+                {label}
+              </button>
             ))}
           </div>
+
+          {mode === "prototype" && (
+            <div className="space-y-3">
+              {roles.map((r, i) => (
+                <motion.button
+                  key={r}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.1 + i * 0.1 }}
+                  onClick={() => doLogin(r)}
+                  disabled={loading !== null}
+                  className={`w-full h-14 rounded-xl border font-mono text-sm tracking-widest font-bold flex items-center px-5 gap-4 transition-all duration-300 disabled:opacity-40 group
+                    ${r === "investigator" ? "bg-cybergold/10 border-cybergold/40 text-cybergold hover:bg-cybergold hover:text-obsidian-900" :
+                      r === "admin" ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white" :
+                        r === "auditor" ? "bg-biometric/10 border-biometric/30 text-biometric hover:bg-biometric hover:text-obsidian-900" :
+                          "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                    }`}
+                >
+                  <Fingerprint size={18} className="group-hover:animate-pulse" />
+                  {loading === r ? "AUTHENTICATING..." : r.toUpperCase()}
+                </motion.button>
+              ))}
+            </div>
+          )}
+
+          {/* Officer credentials login — email + password (+ TOTP second factor) */}
+          {mode === "officer" && (
+            challengeToken ? (
+              <form onSubmit={officerVerifyMfa} className="space-y-3">
+                <div className="p-3 rounded-xl bg-biometric/10 border border-biometric/20 text-biometric text-[10px] font-mono flex items-center gap-2">
+                  <KeyRound size={12} /> MFA CHALLENGE — ENTER THE 6-DIGIT AUTHENTICATOR CODE
+                </div>
+                <input
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  autoFocus
+                  placeholder="000000"
+                  className="w-full h-14 px-5 bg-obsidian-800/60 border border-white/10 rounded-xl text-center text-2xl tracking-[0.5em] font-mono text-white placeholder:text-slate-700 focus:outline-none focus:border-biometric/50 focus:ring-1 focus:ring-biometric/30 transition-all"
+                />
+                <button type="submit" disabled={loading === "mfa" || mfaCode.length !== 6} className="w-full h-12 bg-white text-obsidian-900 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 transition-all">
+                  {loading === "mfa" ? "VERIFYING..." : "VERIFY & ENTER"}
+                </button>
+                <button type="button" onClick={() => { setChallengeToken(null); setMfaCode(""); setError(""); }} className="w-full h-10 text-slate-500 hover:text-slate-300 font-mono text-[10px] tracking-widest transition-colors">
+                  ← BACK
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={officerLogin} className="space-y-3">
+                <div className="relative">
+                  <Mail size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    placeholder="officer@agency.gov.in"
+                    className="w-full h-12 pl-11 pr-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all"
+                  />
+                </div>
+                <div className="relative">
+                  <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    placeholder="••••••••••••"
+                    className="w-full h-12 pl-11 pr-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all"
+                  />
+                </div>
+                <button type="submit" disabled={loading === "officer"} className="w-full h-12 bg-cybergold text-obsidian-900 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 hover:shadow-[0_0_20px_rgba(212,175,55,0.3)] transition-all flex items-center justify-center gap-2">
+                  {loading === "officer" ? "AUTHENTICATING..." : <><ArrowRight size={14} /> CONTINUE</>}
+                </button>
+              </form>
+            )
+          )}
+
+          {/* Public viewer — self-registration with email OTP verification */}
+          {mode === "viewer" && (
+            viewerStage === "verify" ? (
+              <form onSubmit={viewerVerify} className="space-y-3">
+                <div className="p-3 rounded-xl bg-cybergold/10 border border-cybergold/20 text-cybergold text-[10px] font-mono leading-relaxed">
+                  A 6-digit code was sent to <span className="text-white">{viewerEmail}</span>.
+                  {devCode ? <span className="block mt-1 text-slate-400">DEV CODE: <span className="text-biometric tracking-widest">{devCode}</span></span> : null}
+                </div>
+                <input
+                  value={viewerCode}
+                  onChange={(e) => setViewerCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  autoFocus
+                  placeholder="000000"
+                  className="w-full h-14 px-5 bg-obsidian-800/60 border border-white/10 rounded-xl text-center text-2xl tracking-[0.5em] font-mono text-white placeholder:text-slate-700 focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all"
+                />
+                <button type="submit" disabled={loading === "viewer" || viewerCode.length !== 6} className="w-full h-12 bg-white text-obsidian-900 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 transition-all">
+                  {loading === "viewer" ? "VERIFYING..." : "VERIFY & ENTER VAULT"}
+                </button>
+                <button type="button" onClick={() => { setViewerStage("register"); setViewerCode(""); setError(""); }} className="w-full h-10 text-slate-500 hover:text-slate-300 font-mono text-[10px] tracking-widest transition-colors">
+                  ← USE A DIFFERENT EMAIL
+                </button>
+              </form>
+            ) : (
+              <div className="space-y-5">
+                <form onSubmit={viewerRegister} className="space-y-3">
+                  <div className="text-[10px] font-mono text-slate-500 tracking-widest">NEW VIEWER — REGISTER</div>
+                  <input value={viewerName} onChange={(e) => setViewerName(e.target.value)} required placeholder="Full name" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
+                  <input type="email" value={viewerEmail} onChange={(e) => setViewerEmail(e.target.value)} required placeholder="viewer@example.com" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
+                  <input type="password" value={viewerPassword} onChange={(e) => setViewerPassword(e.target.value)} required minLength={8} placeholder="Password (min 8 characters)" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
+                  <button type="submit" disabled={loading === "viewer"} className="w-full h-12 bg-white text-obsidian-900 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 transition-all">
+                    {loading === "viewer" ? "REGISTERING..." : "REGISTER & SEND CODE"}
+                  </button>
+                </form>
+                <div className="flex items-center gap-3 text-[9px] font-mono text-slate-600">
+                  <div className="flex-1 h-px bg-white/10" />OR<div className="flex-1 h-px bg-white/10" />
+                </div>
+                <form onSubmit={viewerRequestOtp} className="space-y-3">
+                  <div className="text-[10px] font-mono text-slate-500 tracking-widest">EXISTING VIEWER — EMAIL ME A CODE</div>
+                  <input type="email" value={viewerEmail} onChange={(e) => setViewerEmail(e.target.value)} required placeholder="viewer@example.com" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
+                  <input type="password" value={viewerPassword} onChange={(e) => setViewerPassword(e.target.value)} required placeholder="Password" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
+                  <button type="submit" disabled={loading === "viewer"} className="w-full h-11 border border-white/15 text-slate-300 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 hover:bg-white/5 transition-all">
+                    SEND VERIFICATION CODE
+                  </button>
+                </form>
+              </div>
+            )
+          )}
 
           {error && (
             <motion.div {...fadeSlideUp} className="mt-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm font-mono">
@@ -290,6 +515,8 @@ function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
         <CasesListView cases={cases} role={role} loading={loadingCases} onOpenCase={setOpenedCase} onCreateCase={() => setShowNewCaseModal(true)} />
       ) : activeView === "vault" ? (
         <VaultView onOpenDocument={setOpenDocId} />
+      ) : activeView === "departments" ? (
+        <DepartmentsView role={role} currentUser={currentUser} onNotify={notify} />
       ) : activeView === "auditlogs" ? (
         <AuditLogsView role={role} />
       ) : activeView === "clearance" ? (
@@ -347,6 +574,7 @@ function DashboardShell({ children, sidebarOpen, setSidebarOpen, activeView, set
           <NavItem icon={Zap} label="Overview" active={activeView === "overview"} isOpen={sidebarOpen} onClick={() => setActiveView("overview")} />
           <NavItem icon={FolderOpen} label="Case Files" active={activeView === "cases"} isOpen={sidebarOpen} onClick={() => setActiveView("cases")} />
           <NavItem icon={Database} label="Evidence Vault" active={activeView === "vault"} isOpen={sidebarOpen} onClick={() => setActiveView("vault")} />
+          <NavItem icon={Building2} label="Departments" active={activeView === "departments"} isOpen={sidebarOpen} onClick={() => setActiveView("departments")} />
           <NavItem icon={FileText} label="Audit Logs" active={activeView === "auditlogs"} isOpen={sidebarOpen} onClick={() => setActiveView("auditlogs")} />
           <NavItem icon={Shield} label="Clearance" active={activeView === "clearance"} isOpen={sidebarOpen} onClick={() => setActiveView("clearance")} />
           <NavItem icon={Settings} label="Settings" active={activeView === "settings"} isOpen={sidebarOpen} onClick={() => setActiveView("settings")} />
@@ -558,11 +786,14 @@ function CaseCard({ caseItem, onClick }: { caseItem: CaseItem; onClick: () => vo
 
 // ── Case Detail View ─────────────────────────────────────────────────
 function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
-  const [tab, setTab] = useState<"documents" | "audit">("documents");
+  const [tab, setTab] = useState<"documents" | "audit" | "ml">("documents");
   const [docs, setDocs] = useState<DocItem[]>([]);
   const [auditTrail, setAuditTrail] = useState<AuditEvent[]>([]);
+  const [mlData, setMlData] = useState<Record<string, { category: string; tags: string[]; status: string; confidence: number }>>({});
+  const [mlFilter, setMlFilter] = useState<string | null>(null);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [loadingAudit, setLoadingAudit] = useState(true);
+  const [loadingMl, setLoadingMl] = useState(true);
   const [modal, setModal] = useState<string | null>(null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
 
@@ -570,7 +801,24 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
 
   function loadDocs() {
     setLoadingDocs(true);
-    api.getCaseDocuments(caseItem.id).then(setDocs).catch(() => { }).finally(() => setLoadingDocs(false));
+    Promise.all([
+      api.getCaseDocuments(caseItem.id).then(setDocs).catch(() => {}),
+      loadMlForCase(),
+    ]).finally(() => { setLoadingDocs(false); setLoadingMl(false); });
+  }
+
+  async function loadMlForCase() {
+    const caseDocs = await api.getCaseDocuments(caseItem.id);
+    const map: Record<string, { category: string; tags: string[]; status: string; confidence: number }> = {};
+    for (const d of caseDocs || []) {
+      try {
+        const ml = await api.getMlSuggestions(d.id);
+        if (ml && ml.status) {
+          map[d.id] = { category: ml.category || "—", tags: ml.tags || [], status: ml.status, confidence: ml.confidence || 0 };
+        }
+      } catch {}
+    }
+    setMlData(map);
   }
 
   function loadAudit() {
@@ -617,6 +865,9 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
         </button>
         <button onClick={() => setTab("audit")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "audit" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-slate-500 hover:text-white"}`}>
           AUDIT TRAIL <span className="ml-2 px-2 py-0.5 rounded-full bg-white/10 text-[10px]">{auditTrail.length}</span>
+         <button onClick={() => setTab("ml")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "ml" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-slate-500 hover:text-white"}`}>
+           ML TAGS <span className="ml-2 px-2 py-0.5 rounded-full bg-white/10 text-[10px]">{Object.keys(mlData).length}</span>
+         </button>
         </button>
       </div>
 

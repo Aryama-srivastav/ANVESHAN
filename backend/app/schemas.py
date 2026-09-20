@@ -202,9 +202,32 @@ class SignatureOut(BaseModel):
     signer_user_id: Optional[str]
     algorithm: str
     signed_hash: str
+    key_role: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Document lineage verification (V2) — cross-version tamper detection
+# ---------------------------------------------------------------------------
+
+
+class LineageVersionOut(BaseModel):
+    version_id: str
+    version_number: int
+    is_original: bool
+    recorded_hash: str
+    anchored_hash: Optional[str] = None
+    byte_status: str = "unverified"
+    record_status: str = "unanchored"
+
+
+class DocumentLineageOut(BaseModel):
+    document_id: str
+    intact: bool
+    issues: list[str] = Field(default_factory=list)
+    versions: list[LineageVersionOut] = Field(default_factory=list)
 
 
 class SignatureVerifyOut(BaseModel):
@@ -512,5 +535,104 @@ class BackupStatusOut(BaseModel):
     backup_dir: str
     database_scheme: str
     backups: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Inter-department document access requests
+# ---------------------------------------------------------------------------
+
+
+class DepartmentRequestCreate(BaseModel):
+    document_id: str
+    purpose: str = Field(min_length=3)
+    requested_access_level: str = "read"
+    to_department: Optional[str] = Field(
+        default=None,
+        description="Destination department that owns the evidence; defaults to the document holder's department.",
+    )
+    from_department: Optional[str] = None
+
+
+class DepartmentRequestOut(BaseModel):
+    id: str
+    document_id: str
+    document_title: Optional[str] = None
+    from_user_id: str
+    from_user_name: Optional[str] = None
+    from_department: Optional[str] = None
+    to_department: Optional[str] = None
+    purpose: str
+    requested_access_level: str
+    status: str
+    review_notes: Optional[str] = None
+    reviewed_by_user_id: Optional[str] = None
+    reviewed_by_name: Optional[str] = None
+    created_at: datetime
+    reviewed_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class DepartmentRequestAction(BaseModel):
+    status: str = Field(pattern="^(approved|rejected)$")
+    review_notes: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Case-lifecycle departments & public complaint tokens (Nyaya)
+# ---------------------------------------------------------------------------
+
+
+class DepartmentOut(BaseModel):
+    key: str
+    name: str
+    description: str
+    can_operate: bool
+    can_view: bool
+
+
+class DepartmentRecordCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=255)
+    body: str = ""
+    case_id: Optional[str] = None
+
+
+class DepartmentRecordOut(BaseModel):
+    id: str
+    department: str
+    case_id: Optional[str]
+    case_number: Optional[str] = None
+    title: str
+    body: str
+    created_by_user_id: Optional[str]
+    created_by_name: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ComplaintCreate(BaseModel):
+    email: EmailStr
+    subject: str = Field(min_length=5, max_length=255)
+    details: str = ""
+    department: str = "nyaya"
+
+
+class ComplaintOut(BaseModel):
+    id: str
+    token: str
+    email: str
+    subject: str
+    details: str
+    department: str
+    status: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ComplaintStatusUpdate(BaseModel):
+    status: str = Field(pattern="^(open|acknowledged|closed)$")
 
 

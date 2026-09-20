@@ -20,10 +20,68 @@ from . import models, schemas
 from .classification import ClassificationService
 from .storage import StorageError, StorageProvider
 from .ledger import AuditLedger
+from .signatures import SignatureService
 
 logger = logging.getLogger("anveshan.services")
 # Step 12 — external record sources accepted by the integration layer.
 EXTERNAL_SOURCE_ALLOWLIST = ("criminal_records", "e_forensics", "nyaya")
+
+# Evidence file type allow-list.  Executable / script / archive / macro-enabled
+# types are deliberately excluded to stop malicious-upload vectors.
+ALLOWED_EVIDENCE_EXTENSIONS = frozenset({
+    # Documents
+    ".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt",
+    # Images
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif", ".webp",
+    # Audio
+    ".mp3", ".wav", ".ogg", ".m4a", ".flac",
+    # Video
+    ".mp4", ".mov", ".avi", ".mkv", ".webm", ".wmv",
+    # Data
+    ".csv", ".json", ".xml", ".xlsx", ".xls", ".ppt", ".pptx",
+})
+ALLOWED_EVIDENCE_CONTENT_TYPES = frozenset({
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
+    "text/plain", "text/csv", "application/json", "application/xml",
+    "application/rtf",
+    "image/jpeg", "image/png", "image/gif", "image/bmp", "image/tiff",
+    "image/webp",
+    "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/flac",
+    "video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska",
+    "video/webm", "video/x-ms-wmv",
+    "application/octet-stream",  # sometimes sent for uploads; we validate by extension too
+})
+
+
+class EvidenceFileTypeError(ValueError):
+    """Raised when an upload is not an allowed evidence format.
+
+    Subclasses ``ValueError`` so existing call sites keep working, but callers
+    can distinguish a rejected *format* (HTTP 400) from a rejected *size*
+    (HTTP 413).
+    """
+
+
+def _validate_evidence_file(filename: str | None, content_type: str | None) -> None:
+    """Reject executable, script, archive and other non-evidence file types."""
+    if filename is None:
+        raise EvidenceFileTypeError("Filename is required for evidence uploads")
+    import os as _os
+    ext = _os.path.splitext(filename.lower())[1]
+    if ext not in ALLOWED_EVIDENCE_EXTENSIONS:
+        raise EvidenceFileTypeError(
+            f"File type '{ext or '(no extension)'}' is not an allowed evidence format. "
+            f"Allowed: documents (pdf, doc, docx, txt, rtf), images (jpg, png, gif, bmp, tiff, webp), "
+            f"audio (mp3, wav, ogg, m4a, flac), video (mp4, mov, avi, mkv, webm, wmv), "
+            f"and data (csv, json, xml, xlsx, xls, ppt, pptx)."
+        )
+    if content_type and content_type not in ALLOWED_EVIDENCE_CONTENT_TYPES:
+        raise EvidenceFileTypeError(f"Content type '{content_type}' is not an allowed evidence format")
 
 
 def validate_external_source(source_system: str) -> str:
@@ -278,6 +336,9 @@ class DocumentService:
         if document is None:
             raise LookupError("Document not found")
 
+        # Security: reject executable / script / archive uploads before we touch storage.
+        _validate_evidence_file(filename, content_type)
+
         latest_number = db.scalar(
             select(models.DocumentVersion.version_number)
             .where(models.DocumentVersion.document_id == document_id)
@@ -318,6 +379,12 @@ class DocumentService:
             AuditLedger.record(db, event_type="document_version_uploaded", actor_user_id=created_by_user_id,
                                case_id=document.case_id, document_id=document_id,
                                payload={"version_id": version.id, "content_hash": version.content_hash})
+            # Every upload is automatically signed with the uploader's role key
+            # (per-system keys: investigator and administrator signatures are
+            # cryptographically distinct). The signature identity, key role and
+            # algorithm are folded into the audit event below.
+            signer_role = AccessService.role_name_for(db, created_by_user_id)
+            signature = SignatureService.sign(db, version, created_by_user_id, key_role=signer_role)
             # Append the upload to the case's tamper-evident event chain so the
             # case audit trail shows every piece of evidence, who filed it and
             # when — including later updates (version_number > 1). Version 1 is
@@ -343,6 +410,9 @@ class DocumentService:
                         "filename": filename,
                         "notes": notes,
                         "uploaded_at": version.created_at.isoformat() if version.created_at else None,
+                        "signature_id": signature.id,
+                        "signed_by_role": signer_role,
+                        "signature_algorithm": signature.algorithm,
                     },
                 ),
             )
@@ -521,6 +591,20 @@ class AccessService:
         )
 
     @staticmethod
+    def role_name_for(db: Session, user_id: str | None) -> str | None:
+        """Primary role name of a user (deterministic); None when role-less."""
+        if user_id is None:
+            return None
+        name = db.scalar(
+            select(models.Role.name)
+            .join(models.UserRole, models.UserRole.role_id == models.Role.id)
+            .where(models.UserRole.user_id == user_id)
+            .order_by(models.Role.name)
+            .limit(1)
+        )
+        return name
+
+    @staticmethod
     def require_role(db: Session, user_id: str, *role_names: str) -> None:
         if not AccessService.has_role(db, user_id, *role_names):
             raise PermissionError(f"One of these roles is required: {', '.join(role_names)}")
@@ -611,3 +695,225 @@ class RecordService:
         db.commit()
         db.refresh(record)
         return record
+
+
+class DepartmentRequestService:
+    """Workflow for cross-department document access requests."""
+
+    @staticmethod
+    def list(db: Session) -> list[models.DepartmentRequest]:
+        return list(db.scalars(
+            select(models.DepartmentRequest).order_by(models.DepartmentRequest.created_at.desc())
+        ))
+
+    @staticmethod
+    def list_for_user(db: Session, user_id: str) -> list[models.DepartmentRequest]:
+        user = db.get(models.User, user_id)
+        if user is None:
+            return []
+        dept = user.department
+        return list(db.scalars(
+            select(models.DepartmentRequest)
+            .where(
+                (models.DepartmentRequest.from_user_id == user_id)
+                | (models.DepartmentRequest.to_department == dept)
+                | (models.DepartmentRequest.from_department == dept)
+            )
+            .order_by(models.DepartmentRequest.created_at.desc())
+        ))
+
+    @staticmethod
+    def create(
+        db: Session, payload: schemas.DepartmentRequestCreate, actor_id: str
+    ) -> models.DepartmentRequest:
+        document = DocumentService.get(db, payload.document_id)
+        if document is None:
+            raise LookupError("Document not found")
+        actor = db.get(models.User, actor_id)
+
+        # Destination department: explicit choice wins, otherwise infer it from
+        # the officer who filed the latest version of the evidence.
+        to_department = payload.to_department
+        if not to_department:
+            holder_id = db.scalar(
+                select(models.DocumentVersion.created_by_user_id)
+                .where(models.DocumentVersion.document_id == document.id)
+                .order_by(models.DocumentVersion.version_number.desc())
+                .limit(1)
+            )
+            holder = db.get(models.User, holder_id) if holder_id else None
+            to_department = holder.department if holder else None
+
+        req = models.DepartmentRequest(
+            document_id=payload.document_id,
+            from_user_id=actor_id,
+            from_department=payload.from_department or (actor.department if actor else None),
+            to_department=to_department,
+            purpose=payload.purpose,
+            requested_access_level=payload.requested_access_level,
+        )
+        db.add(req)
+        db.commit()
+        db.refresh(req)
+        return req
+
+    @staticmethod
+    def action(
+        db: Session, request_id: str, payload: schemas.DepartmentRequestAction, actor_id: str
+    ) -> models.DepartmentRequest:
+        req = db.get(models.DepartmentRequest, request_id)
+        if req is None:
+            raise LookupError("Request not found")
+        # Only a member of the destination department (to_department matches the
+        # actor's department) or an admin may approve/reject.
+        actor = db.get(models.User, actor_id)
+        is_admin = AccessService._is_admin(db, actor_id)
+        if not is_admin:
+            actor_dept = actor.department if actor else None
+            if req.to_department and req.to_department != actor_dept:
+                raise PermissionError("Only a member of the destination department may review this request")
+        req.status = payload.status
+        req.review_notes = payload.review_notes
+        req.reviewed_by_user_id = actor_id
+        req.reviewed_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(req)
+        return req
+
+
+# Departments that touch a case across its whole lifecycle, with the role
+# matrix the user specified: who operates the dataset and who may view it.
+# ``user`` is the investigator role, ``viewer`` the read-only citizen role.
+DEPARTMENT_MATRIX: dict[str, dict[str, tuple[str, ...]]] = {
+    "criminal_records": {"operate": ("admin",), "view": ("admin", "user")},
+    "e_forensics": {"operate": ("admin",), "view": ("admin", "user", "auditor")},
+    "police": {"operate": ("admin",), "view": ("admin", "user", "auditor")},
+    "legal": {"operate": ("admin",), "view": ("admin", "user", "auditor")},
+    "judiciary": {"operate": ("admin",), "view": ("admin", "user", "auditor")},
+    "forensics": {"operate": ("admin",), "view": ("admin", "user", "auditor")},
+    "prison": {"operate": ("admin",), "view": ("admin", "user")},
+    "nyaya": {"operate": ("admin",), "view": ("admin", "user", "auditor", "viewer")},
+}
+
+DEPARTMENT_LABELS: dict[str, tuple[str, str]] = {
+    "criminal_records": ("Criminal Records", "First-information and charge-sheet register."),
+    "e_forensics": ("E-Forensics", "Digital exhibits, device imaging and hash manifests."),
+    "police": ("Police", "Station diaries, arrests and investigation notes."),
+    "legal": ("Legal", "Opinions, drafts and department legal advice."),
+    "judiciary": ("Judiciary", "Court filings, hearings and interim orders."),
+    "forensics": ("Forensics", "Lab reports, exhibits and expert opinions."),
+    "prison": ("Prison", "Custody, remand and jail admission records."),
+    "nyaya": ("Nyaya", "Judicial verdicts and final judgements; citizen complaints."),
+}
+
+
+class DepartmentService:
+    """Case-lifecycle department datasets and the public complaint desk."""
+
+    @staticmethod
+    def matrix_for(db: Session, user: models.User | None) -> list[dict]:
+        """Department descriptors annotated with the caller's permissions."""
+        from .services import AccessService
+
+        roles: set[str] = set()
+        if user is not None:
+            for user_role in user.roles:
+                roles.add(user_role.role.name)
+        is_admin = user is not None and AccessService._is_admin(db, user.id)
+        out: list[dict] = []
+        for key, (name, description) in DEPARTMENT_LABELS.items():
+            matrix = DEPARTMENT_MATRIX[key]
+            out.append({
+                "key": key,
+                "name": name,
+                "description": description,
+                "can_view": is_admin or bool(roles & set(matrix["view"])),
+                "can_operate": is_admin or bool(roles & set(matrix["operate"])),
+            })
+        return out
+
+    @staticmethod
+    def assert_can_view(db: Session, user: models.User, department: str) -> None:
+        from .services import AccessService
+
+        if AccessService._is_admin(db, user.id):
+            return
+        matrix = DEPARTMENT_MATRIX.get(department)
+        if matrix is None or not AccessService.has_role(db, user.id, *matrix["view"]):
+            raise PermissionError(f"You are not authorised to view the {department} dataset")
+
+    @staticmethod
+    def assert_can_operate(db: Session, user: models.User, department: str) -> None:
+        from .services import AccessService
+
+        if AccessService._is_admin(db, user.id):
+            return
+        matrix = DEPARTMENT_MATRIX.get(department)
+        if matrix is None or not AccessService.has_role(db, user.id, *matrix["operate"]):
+            raise PermissionError(f"You are not authorised to operate the {department} dataset")
+
+    @staticmethod
+    def list_records(db: Session, department: str) -> list[models.DepartmentRecord]:
+        return list(db.scalars(
+            select(models.DepartmentRecord)
+            .where(models.DepartmentRecord.department == department)
+            .order_by(models.DepartmentRecord.created_at.desc())
+        ))
+
+    @staticmethod
+    def create_record(
+        db: Session, department: str, payload: schemas.DepartmentRecordCreate, actor_id: str
+    ) -> models.DepartmentRecord:
+        record = models.DepartmentRecord(
+            department=department,
+            case_id=payload.case_id,
+            title=payload.title,
+            body=payload.body,
+            created_by_user_id=actor_id,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        return record
+
+    # ── Public complaint desk ──────────────────────────────────────────
+    @staticmethod
+    def create_complaint(db: Session, payload: schemas.ComplaintCreate) -> models.ComplaintToken:
+        from secrets import token_hex
+
+        if payload.department not in DEPARTMENT_MATRIX:
+            raise ValueError(f"Unknown department '{payload.department}'")
+        complaint = models.ComplaintToken(
+            token=f"CMP-{token_hex(4).upper()}-{token_hex(4).upper()}",
+            email=payload.email.lower().strip(),
+            subject=payload.subject.strip(),
+            details=payload.details,
+            department=payload.department,
+        )
+        db.add(complaint)
+        db.commit()
+        db.refresh(complaint)
+        return complaint
+
+    @staticmethod
+    def get_by_token(db: Session, token: str) -> models.ComplaintToken | None:
+        return db.scalar(
+            select(models.ComplaintToken).where(models.ComplaintToken.token == token.strip().upper())
+        )
+
+    @staticmethod
+    def list_complaints(db: Session) -> list[models.ComplaintToken]:
+        return list(db.scalars(
+            select(models.ComplaintToken).order_by(models.ComplaintToken.created_at.desc())
+        ))
+
+    @staticmethod
+    def set_complaint_status(db: Session, complaint_id: str, status: str) -> models.ComplaintToken:
+        complaint = db.get(models.ComplaintToken, complaint_id)
+        if complaint is None:
+            raise LookupError("Complaint not found")
+        complaint.status = status
+        complaint.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(complaint)
+        return complaint

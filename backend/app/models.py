@@ -195,9 +195,31 @@ class DocumentSignature(Base):
     signature: Mapped[str] = mapped_column(Text)
     public_key_pem: Mapped[str] = mapped_column(Text)
     signed_hash: Mapped[str] = mapped_column(String(128), index=True)
+    # Role whose per-system signing key produced this signature (e.g. "user",
+    # "admin"). Null for legacy signatures made with the single system key.
+    key_role: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
     version: Mapped[DocumentVersion] = relationship(back_populates="signatures")
+
+
+class RoleSigningKey(Base):
+    """Per-system signing key provisioned per role (V2).
+
+    Every evidence upload is signed automatically with the uploader's role
+    key, so an investigator signature and an administrator signature are
+    cryptographically distinct. The private key is encrypted at rest with a
+    key derived from ``APP_SECRET_KEY``; only the public key is exposed.
+    """
+
+    __tablename__ = "role_signing_keys"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    role_name: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    private_key_encrypted: Mapped[str] = mapped_column(Text)
+    public_key_pem: Mapped[str] = mapped_column(Text)
+    algorithm: Mapped[str] = mapped_column(String(80), default="RSA-PSS-SHA256")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
 class ClassificationTag(Base):
@@ -340,3 +362,81 @@ class DocumentTransfer(Base):
     document: Mapped[Document] = relationship(back_populates="transfers")
     from_user: Mapped[User | None] = relationship(foreign_keys=[from_user_id])
     to_user: Mapped[User] = relationship(foreign_keys=[to_user_id])
+
+
+class DepartmentRequest(Base):
+    """Cross-department document access request.
+
+    An investigator in one department files a request to access a document held
+    by another department.  The request is reviewed and either approved or
+    rejected by a member of the destination department (or by an admin).
+    """
+    __tablename__ = "department_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    from_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    from_department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    to_department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    purpose: Mapped[str] = mapped_column(String(500))
+    requested_access_level: Mapped[str] = mapped_column(String(50), default="read")
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    document: Mapped[Document] = relationship()
+    from_user: Mapped[User] = relationship(foreign_keys=[from_user_id])
+    reviewer: Mapped[User | None] = relationship(foreign_keys=[reviewed_by_user_id])
+
+
+class DepartmentRecord(Base):
+    """A dataset entry filed under one of the case-lifecycle departments.
+
+    Departments are the standing units that touch a case across its whole
+    lifecycle (criminal records, e-forensics, police, legal, judiciary,
+    forensics, prison, nyaya). A record is a short structured note, optionally
+    anchored to a case, filed by an authorised officer.
+    """
+
+    __tablename__ = "department_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    department: Mapped[str] = mapped_column(String(80), index=True)
+    case_id: Mapped[str | None] = mapped_column(
+        ForeignKey("cases.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text, default="")
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class ComplaintToken(Base):
+    """Public complaint raised by a citizen/viewer against the Nyaya docket.
+
+    The token is the only handle a complainant needs to track status; the
+    email is stored so the department can reach back. Status moves
+    open → acknowledged → closed as the judiciary desk works the complaint.
+    """
+
+    __tablename__ = "complaint_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    subject: Mapped[str] = mapped_column(String(255))
+    details: Mapped[str] = mapped_column(Text, default="")
+    department: Mapped[str] = mapped_column(String(80), default="nyaya", index=True)
+    status: Mapped[str] = mapped_column(String(30), default="open", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

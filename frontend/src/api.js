@@ -128,8 +128,9 @@ export const api = {
   getIntegritySummary: (docId, verify) => apiRequest(`/v1/documents/${docId}/integrity-summary${query({ verify: verify ? "true" : "" })}`),
   getOriginalRecord: (docId) => apiRequest(`/v1/documents/${docId}/original`),
   attachOriginalRecord: (docId, payload) => apiRequest(`/v1/documents/${docId}/original-record`, { method: "POST", body: JSON.stringify(payload) }),
-  getDocumentAuditTrail: (docId) => apiRequest(`/v1/documents/${docId}/audit-trail`),
+    getDocumentAuditTrail: (docId) => apiRequest(`/v1/documents/${docId}/audit-trail`),
   getDocumentExternalRecords: (docId) => apiRequest(`/v1/documents/${docId}/external-records`),
+  getDocumentLineage: (docId) => apiRequest(`/v1/documents/${docId}/lineage`),
   downloadVersion: (docId, versionId, fileName) => apiDownload(`/v1/documents/${docId}/versions/${versionId}/content`, fileName || "evidence.bin"),
 
   // ── Digital signatures ─────────────────────────────────────────────
@@ -137,7 +138,8 @@ export const api = {
   listSignatures: (docId, versionId) => apiRequest(`/v1/documents/${docId}/versions/${versionId}/signatures`),
   verifySignature: (docId, versionId, signatureId) => apiRequest(`/v1/documents/${docId}/versions/${versionId}/signatures/${signatureId}/verify`, { method: "POST" }),
 
-  // ── Tags & ML classification (Step 9) ──────────────────────────────
+  // ── Document lineage (V2 — cross-version tamper detection) ──────────────
+  getDocumentLineage: (docId) => apiRequest(`/v1/documents/${docId}/lineage`),
   listTags: () => apiRequest("/v1/tags"),
   createTag: (payload) => apiRequest("/v1/tags", { method: "POST", body: JSON.stringify(payload) }),
   getDocumentTags: (docId) => apiRequest(`/v1/documents/${docId}/tags`),
@@ -149,12 +151,26 @@ export const api = {
   // ── Search (Step 8) ────────────────────────────────────────────────
   search: (params) => apiRequest(`/v1/search${query(params)}`),
 
-  // ── Transfers (Step 10) ────────────────────────────────────────────
+     // ── Transfers (Step 10) ────────────────────────────────────────────
   createTransfer: (payload) => apiRequest("/v1/transfers", { method: "POST", body: JSON.stringify(payload) }),
   listTransfers: () => apiRequest("/v1/transfers"),
   getTransfer: (transferId) => apiRequest(`/v1/transfers/${transferId}`),
   acceptTransfer: (transferId) => apiRequest(`/v1/transfers/${transferId}/accept`, { method: "POST" }),
   rejectTransfer: (transferId, reason) => apiRequest(`/v1/transfers/${transferId}/reject${query({ reason })}`, { method: "POST" }),
+
+  // ── Department access requests ───────────────────────────────────────
+  listDepartmentRequests: () => apiRequest("/v1/department-requests"),
+  createDepartmentRequest: (payload) => apiRequest("/v1/department-requests", { method: "POST", body: JSON.stringify(payload) }),
+  actionDepartmentRequest: (requestId, payload) => apiRequest(`/v1/department-requests/${requestId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  // ── Case-lifecycle departments & public complaint desk ──────────────
+  listDepartments: () => apiRequest("/v1/departments"),
+  listDepartmentRecords: (key) => apiRequest(`/v1/departments/${key}/records`),
+  createDepartmentRecord: (key, payload) => apiRequest(`/v1/departments/${key}/records`, { method: "POST", body: JSON.stringify(payload) }),
+  raiseComplaint: (payload) => apiRequest("/v1/complaints", { method: "POST", body: JSON.stringify(payload) }),
+  trackComplaint: (token) => apiRequest(`/v1/complaints/${encodeURIComponent(token)}`),
+  listComplaints: () => apiRequest("/v1/complaints"),
+  updateComplaintStatus: (complaintId, status) => apiRequest(`/v1/complaints/${complaintId}`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
   // ── Audit ledger & blockchain verification (Step 13) ───────────────
   listAuditTrail: (params) => apiRequest(`/v1/audit-trail${query(params)}`),

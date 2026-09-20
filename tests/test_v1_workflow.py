@@ -89,7 +89,7 @@ def test_full_v1_journey(v1) -> None:
     listed = v1.client.get(
         f"/v1/documents/{document_id}/versions/{version['id']}/signatures"
     )
-    assert listed.status_code == 200 and len(listed.json()) == 1
+    assert listed.status_code == 200 and len(listed.json()) == 2  # auto-signature on upload + manual sign
 
     # --- Step 9: ML classification and tagging ----------------------------
     suggestions = v1.client.get(f"/v1/documents/{document_id}/ml-suggestions")

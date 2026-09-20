@@ -47,6 +47,7 @@ from .services import (
     CaseEventService,
     CaseService,
     DocumentService,
+    EvidenceFileTypeError,
     RecordService,
     UserService,
     validate_external_source,
@@ -413,6 +414,9 @@ def upload_document_version(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except EvidenceFileTypeError as exc:
+        # A disallowed evidence format is a client error, not an oversized body.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except StorageError as exc:
@@ -462,7 +466,7 @@ def sign_document_version(document_id: str, version_id: str, db: Session = Depen
         version = DocumentService.get_version(db, document_id, version_id)
         if version is None:
             raise HTTPException(status_code=404, detail="Document version not found")
-        signature = SignatureService.sign(db, version, current_user.id)
+        signature = SignatureService.sign(db, version, current_user.id, key_role=AccessService.role_name_for(db, current_user.id))
         AuditLedger.record(db, event_type="document_signed", actor_user_id=current_user.id, case_id=document.case_id,
                            document_id=document.id, payload={"signature_id": signature.id, "version_id": version_id})
         db.commit()
