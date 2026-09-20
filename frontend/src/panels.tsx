@@ -8,7 +8,7 @@ import {
   FileImage, FileAudio, FileVideo, File as FileLucide, X, Hash,
   Building2, ArrowRightLeft, Check, XCircle, Send, RefreshCw,
   BarChart3, Truck, Scale, Gavel, Users, ClipboardList,
-  Smartphone, AlertTriangle,
+  Megaphone, Bell, TicketCheck, Copy, Inbox,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -42,7 +42,7 @@ export interface PanelUser {
 }
 
 // ── Department configuration (case-lifecycle departments) ──────────────
-const DEPARTMENTS: { key: string; name: string; icon: any; operate: string[]; view: string[] }[] = [
+export const DEPARTMENTS: { key: string; name: string; icon: any; operate: string[]; view: string[] }[] = [
   { key: "criminal_records", name: "Criminal Record Dataset", icon: BarChart3, operate: ["admin"], view: ["admin", "investigator"] },
   { key: "e_forensics", name: "E-Forensics", icon: Truck, operate: ["admin"], view: ["admin", "investigator", "auditor"] },
   { key: "police", name: "Police", icon: Shield, operate: ["admin"], view: ["admin", "investigator", "auditor"] },
@@ -53,7 +53,7 @@ const DEPARTMENTS: { key: string; name: string; icon: any; operate: string[]; vi
   { key: "nyaya", name: "Nyaya (Judicial Verdicts)", icon: ClipboardList, operate: ["admin"], view: ["admin", "investigator", "auditor", "viewer"] },
 ];
 
-interface DepartmentItem {
+export interface DepartmentItem {
   key: string;
   name: string;
   description: string;
@@ -61,7 +61,7 @@ interface DepartmentItem {
   can_view: boolean;
 }
 
-interface DepartmentRecord {
+export interface DepartmentRecord {
   id: string;
   department: string;
   case_id: string | null;
@@ -73,7 +73,7 @@ interface DepartmentRecord {
   created_at: string;
 }
 
-interface ComplaintItem {
+export interface ComplaintItem {
   id: string;
   token: string;
   email: string;
@@ -1086,6 +1086,231 @@ export function MlTagsView({ role, onNotify }: { role: string; onNotify: (m: str
 }
 
 
+
+// ── Prototype banner ─────────────────────────────────────────────────
+// Cosmetic only: labels the demo environment and offers one-click demo
+// sign-in. Rendered inside the scrollable content column (not above the
+// fixed-height shell) so it never breaks the sidebar layout.
+export function PrototypeBanner({ onQuickLogin }: { onQuickLogin: (role: "investigator" | "auditor" | "admin") => void }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  if (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_PROTOTYPE_MODE === "false") return null;
+  return (
+    <div className="border-b border-cybergold/25 bg-cybergold/10">
+      <div className="px-4 py-2 flex items-center gap-3 flex-wrap">
+        <span className="px-2 py-0.5 rounded bg-cybergold text-obsidian-950 text-[10px] font-mono font-bold tracking-widest">PROTOTYPE</span>
+        <p className="text-[11px] font-mono text-cybergold/90 tracking-wide">
+          DEMO ENVIRONMENT — demo identities only, no live case data.
+        </p>
+        <div className="flex items-center gap-1.5 ml-auto">
+          {(["investigator", "auditor", "admin"] as const).map((r) => (
+            <button key={r} onClick={() => onQuickLogin(r)}
+              className="px-2.5 py-1 rounded-lg border border-cybergold/30 text-cybergold text-[10px] font-mono font-bold hover:bg-cybergold/10 transition-all">
+              {r.toUpperCase()}
+            </button>
+          ))}
+          <button onClick={() => setDismissed(true)} aria-label="Dismiss prototype banner"
+            className="p-1 rounded-lg text-cybergold/60 hover:text-cybergold hover:bg-cybergold/10 transition-all">
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Viewer dashboard: public notices + complaint desk only ─────────────
+// Notices: Nyaya + Judiciary department records (both viewer-visible in
+// the backend permission matrix). Complaints: unauthenticated public
+// endpoints (raise with email, track with token).
+export function ViewerDashboard({ onNotify }: { onNotify: (m: string) => void }) {
+  const [notices, setNotices] = useState<DepartmentRecord[]>([]);
+  const [loadingNotices, setLoadingNotices] = useState(true);
+  const [noticesError, setNoticesError] = useState("");
+  const [email, setEmail] = useState("");
+  const [subject, setSubject] = useState("");
+  const [details, setDetails] = useState("");
+  const [raising, setRaising] = useState(false);
+  const [issuedToken, setIssuedToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [trackToken, setTrackToken] = useState("");
+  const [tracking, setTracking] = useState(false);
+  const [trackError, setTrackError] = useState("");
+  const [tracked, setTracked] = useState<ComplaintItem | null>(null);
+
+  useEffect(() => { loadNotices(); }, []);
+
+  async function loadNotices() {
+    setLoadingNotices(true);
+    setNoticesError("");
+    try {
+      const [nyaya, judiciary] = await Promise.all([
+        api.listDepartmentRecords("nyaya").catch(() => []),
+        api.listDepartmentRecords("judiciary").catch(() => []),
+      ]);
+      const merged: DepartmentRecord[] = [...(nyaya || []), ...(judiciary || [])]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setNotices(merged);
+    } catch (err: any) {
+      setNoticesError(err?.message || "Could not load public notices");
+    } finally {
+      setLoadingNotices(false);
+    }
+  }
+
+  async function raiseComplaint(e: React.FormEvent) {
+    e.preventDefault();
+    setRaising(true);
+    setIssuedToken(null);
+    try {
+      const res = await api.raiseComplaint({ email: email.trim(), subject: subject.trim(), details: details.trim(), department: "nyaya" });
+      setIssuedToken(res.token);
+      setSubject("");
+      setDetails("");
+      onNotify("Complaint filed — save your tracking token");
+    } catch (err: any) {
+      onNotify(err?.message || "Could not file complaint");
+    } finally {
+      setRaising(false);
+    }
+  }
+
+  async function trackComplaint(e: React.FormEvent) {
+    e.preventDefault();
+    if (!trackToken.trim()) return;
+    setTracking(true);
+    setTrackError("");
+    setTracked(null);
+    try {
+      const res: ComplaintItem = await api.trackComplaint(trackToken.trim());
+      setTracked(res);
+    } catch (err: any) {
+      setTrackError(err?.message || "Complaint not found — check the token and try again");
+    } finally {
+      setTracking(false);
+    }
+  }
+
+  function copyToken() {
+    if (!issuedToken) return;
+    try {
+      navigator.clipboard.writeText(issuedToken);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
+  }
+
+  const statusColor = (s: string) =>
+    s === "resolved" || s === "closed" ? "bg-biometric/10 text-biometric border-biometric/20"
+    : s === "in_review" || s === "actioned" ? "bg-cybergold/10 text-cybergold border-cybergold/20"
+    : "bg-white/5 text-slate-400 border-white/10";
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-[11px] font-mono font-bold text-slate-400 tracking-widest flex items-center gap-2">
+            <Megaphone size={14} className="text-cybergold" /> PUBLIC NOTICES — NYAYA & JUDICIARY
+          </h2>
+          <button onClick={loadNotices} className="flex items-center gap-1.5 text-[10px] font-mono text-slate-500 hover:text-white transition-all">
+            <RefreshCw size={12} /> REFRESH
+          </button>
+        </div>
+        {loadingNotices ? (
+          <p className="text-xs font-mono text-slate-500 py-8 text-center">LOADING NOTICES…</p>
+        ) : noticesError ? (
+          <p className="text-xs font-mono text-red-400 py-8 text-center">{noticesError}</p>
+        ) : notices.length === 0 ? (
+          <div className="glass-panel rounded-xl p-8 text-center">
+            <Bell size={28} className="text-slate-700 mx-auto mb-3" />
+            <p className="text-white font-mono font-bold text-sm mb-1">NO PUBLIC NOTICES PUBLISHED YET</p>
+            <p className="text-slate-500 text-xs font-mono">Judicial verdicts and public announcements will appear here.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {notices.map((n) => (
+              <div key={n.id} className="glass-panel rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold border bg-white/5 text-slate-400 border-white/10">
+                    {n.department.toUpperCase()}
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-500">{formatDate(n.created_at)}</span>
+                </div>
+                <h3 className="text-white font-bold text-sm mb-1.5 leading-snug">{n.title}</h3>
+                {n.body && <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">{n.body}</p>}
+                {n.case_number && <p className="text-[10px] font-mono text-slate-600 mt-2">REF {n.case_number}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="glass-panel rounded-xl p-6" data-viewer_raise>
+          <h2 className="text-[11px] font-mono font-bold text-slate-400 tracking-widest flex items-center gap-2 mb-1">
+            <Send size={14} className="text-cybergold" /> FILE A COMPLAINT
+          </h2>
+          <p className="text-[11px] font-mono text-slate-600 mb-4">No login needed — you will receive a tracking token.</p>
+          <form onSubmit={raiseComplaint} className="space-y-3">
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Your email"
+              className="w-full h-10 px-3 bg-obsidian-900 border border-white/10 rounded-lg text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50" />
+            <input value={subject} onChange={(e) => setSubject(e.target.value)} required minLength={5} maxLength={255} placeholder="Subject (min 5 characters)"
+              className="w-full h-10 px-3 bg-obsidian-900 border border-white/10 rounded-lg text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50" />
+            <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={4} placeholder="Describe the issue in detail…"
+              className="w-full px-3 py-2.5 bg-obsidian-900 border border-white/10 rounded-lg text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 resize-y" />
+            <button type="submit" disabled={raising || !email.trim() || !subject.trim()}
+              className="w-full h-10 bg-white text-obsidian-900 rounded-lg text-[11px] font-mono font-bold disabled:opacity-40 transition-all">
+              {raising ? "FILING…" : "SUBMIT COMPLAINT"}
+            </button>
+          </form>
+          {issuedToken && (
+            <div className="mt-4 p-3 rounded-xl bg-biometric/10 border border-biometric/25">
+              <p className="text-[10px] font-mono font-bold text-biometric tracking-widest flex items-center gap-1.5 mb-1.5">
+                <TicketCheck size={13} /> COMPLAINT FILED — SAVE THIS TOKEN
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-2.5 py-1.5 bg-obsidian-900 rounded-lg text-biometric text-xs font-mono break-all">{issuedToken}</code>
+                <button onClick={copyToken} className="p-2 rounded-lg border border-biometric/25 text-biometric hover:bg-biometric/10 transition-all" title="Copy token">
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="glass-panel rounded-xl p-6">
+          <h2 className="text-[11px] font-mono font-bold text-slate-400 tracking-widest flex items-center gap-2 mb-1">
+            <Inbox size={14} className="text-biometric" /> TRACK YOUR COMPLAINT
+          </h2>
+          <p className="text-[11px] font-mono text-slate-600 mb-4">Enter the token issued when you filed.</p>
+          <form onSubmit={trackComplaint} className="flex gap-2 mb-4">
+            <input value={trackToken} onChange={(e) => setTrackToken(e.target.value)} placeholder="Paste tracking token…"
+              className="flex-1 h-10 px-3 bg-obsidian-900 border border-white/10 rounded-lg text-xs font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-biometric/50" />
+            <button type="submit" disabled={tracking || !trackToken.trim()}
+              className="h-10 px-4 bg-biometric text-obsidian-950 rounded-lg text-[11px] font-mono font-bold disabled:opacity-40 transition-all">
+              {tracking ? "…" : "TRACK"}
+            </button>
+          </form>
+          {trackError && <p className="text-xs font-mono text-red-400">{trackError}</p>}
+          {tracked && (
+            <div className="p-4 rounded-xl bg-obsidian-900/60 border border-white/5 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold border ${statusColor(tracked.status)}`}>
+                  {tracked.status.replace(/_/g, " ").toUpperCase()}
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">{formatDate(tracked.created_at)}</span>
+              </div>
+              <h3 className="text-white font-bold text-sm">{tracked.subject}</h3>
+              {tracked.details && <p className="text-xs text-slate-400 leading-relaxed">{tracked.details}</p>}
+              <p className="text-[10px] font-mono text-slate-600">DEPARTMENT {tracked.department.toUpperCase()}</p>
+            </div>
+          )}
+          {!tracked && !trackError && (
+            <p className="text-[11px] font-mono text-slate-600">Status, department and last update will appear here.</p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
 
 interface DeptRequest {
   id: string;

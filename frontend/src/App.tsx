@@ -11,10 +11,65 @@ import {
   Building2, KeyRound, Mail, ArrowRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { VaultView, AuditLogsView, ClearanceView, SettingsView, DepartmentsView, DocumentDetailModal } from "./panels";
+import { VaultView, AuditLogsView, ClearanceView, SettingsView, DepartmentsView, ViewerDashboard, PrototypeBanner, DocumentDetailModal } from "./panels";
 
 // ── Type definitions ─────────────────────────────────────────────────
 type ActiveView = "overview" | "cases" | "vault" | "departments" | "auditlogs" | "clearance" | "settings";
+
+// ── Brand assets (optional uploads — nothing breaks when missing) ──────
+// Upload on GitHub: ANVESHAN/frontend/public/brand/icon.png (logo) and
+// ANVESHAN/frontend/public/brand/bg.png (background). They are served at
+// /brand/icon.png and /brand/bg.png. BrandLogo / AppBackground below probe
+// those URLs at runtime and fall back to the built-in look when absent.
+const BRAND_ICON_URL = "/brand/icon.png";
+const BRAND_BG_URL = "/brand/bg.png";
+
+function useBrandAsset(url: string) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const img = new Image();
+    img.onload = () => { if (live) setReady(true); };
+    img.onerror = () => { if (live) setReady(false); };
+    img.src = url;
+    return () => { live = false; };
+  }, [url]);
+  return ready;
+}
+
+/** Logo: your icon.png when uploaded, else the built-in shield. */
+function BrandLogo({ size = 28, boxClass = "" }: { size?: number; boxClass?: string }) {
+  const hasIcon = useBrandAsset(BRAND_ICON_URL);
+  if (hasIcon) {
+    return (
+      <img src={BRAND_ICON_URL} alt="ANVESHAN logo" width={size} height={size}
+        className={`rounded-lg object-contain shrink-0 ${boxClass}`} />
+    );
+  }
+  return <ShieldAlert size={size} className="text-cybergold shrink-0" />;
+}
+
+/** Background layer: your bg.png when uploaded, else the default glow. */
+function AppBackground() {
+  const hasBg = useBrandAsset(BRAND_BG_URL);
+  if (hasBg) {
+    return (
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <img src={BRAND_BG_URL} alt="" aria-hidden
+          className="w-full h-full object-cover opacity-40" />
+        <div className="absolute inset-0 bg-gradient-to-b from-obsidian-900/70 via-obsidian-900/80 to-obsidian-900/90" />
+      </div>
+    );
+  }
+  return (
+    <motion.div
+      animate={{ opacity: [0.3, 0.5, 0.3] }}
+      transition={{ duration: 20, repeat: Infinity, repeatType: "reverse" }}
+      className="absolute inset-0 z-0 pointer-events-none"
+      style={{ background: "radial-gradient(circle at 30% 20%, rgba(212,175,55,0.04) 0%, transparent 50%)" }}
+    />
+  );
+}
 
 interface CaseItem {
   id: string;
@@ -240,6 +295,8 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
 
   return (
     <div className="min-h-screen bg-obsidian-900 flex relative overflow-hidden">
+      {/* Background: your bg.png when uploaded, else the default artwork */}
+      <AppBackground />
       {/* Scanline effect */}
       <div className="scan-line" />
 
@@ -260,8 +317,8 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
       >
         <div className="max-w-md w-full">
           <div className="flex items-center gap-4 mb-12">
-            <div className="w-14 h-14 rounded-xl bg-navy-900 border border-cybergold/30 flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.2)]">
-              <ShieldAlert size={28} className="text-cybergold" />
+            <div className="w-14 h-14 rounded-xl bg-navy-900 border border-cybergold/30 flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.2)] overflow-hidden">
+              <BrandLogo size={32} />
             </div>
             <div>
               <h1 className="text-xl font-bold text-white font-mono tracking-[0.2em]">ANVESHAN</h1>
@@ -483,6 +540,17 @@ function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
     api.listCases().then((data: CaseItem[]) => setCases(data)).catch(() => { }).finally(() => setLoadingCases(false));
   }
 
+  function quickPrototypeLogin(demoRole: "investigator" | "auditor" | "admin") {
+    api.prototypeLogin(demoRole, demoRole).then((res: any) => {
+      localStorage.setItem("anveshan_token", res.access_token);
+      localStorage.setItem("anveshan_role", res.role);
+      setToken(res.access_token);
+      setRole(res.role);
+      setCurrentUser(res.user || null);
+      notify("Signed in as demo " + res.role);
+    }).catch((err: Error) => notify(err.message || "Prototype login failed"));
+  }
+
   function notify(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 3500);
@@ -491,10 +559,22 @@ function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
   const clearance = CLEARANCE_MAP[role] || CLEARANCE_MAP.viewer;
   const activeCases = cases.filter(c => c.status === "Active").length;
 
-  // If a case is opened, show case detail
+  // Viewers get the public dashboard (notices + complaint desk only)
+  if (role === "viewer") {
+    return (
+      <DashboardShell banner={<PrototypeBanner onQuickLogin={quickPrototypeLogin} />} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeView={activeView} setActiveView={setActiveView} clearance={clearance} currentTime={currentTime} currentUser={currentUser} onLogout={onLogout} role={role}>
+        <div className="max-w-7xl mx-auto p-8">
+          <ViewerDashboard onNotify={notify} />
+        </div>
+        <Toast message={toast} />
+      </DashboardShell>
+    );
+  }
+
+  // If a case is opened, show case detail (banner inside the shell so layout holds)
   if (openedCase) {
     return (
-      <DashboardShell sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeView={activeView} setActiveView={setActiveView} clearance={clearance} currentTime={currentTime} currentUser={currentUser} onLogout={onLogout} role={role}>
+      <DashboardShell banner={<PrototypeBanner onQuickLogin={quickPrototypeLogin} />} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeView={activeView} setActiveView={setActiveView} clearance={clearance} currentTime={currentTime} currentUser={currentUser} onLogout={onLogout} role={role}>
         <CaseDetail
           caseItem={openedCase}
           role={role}
@@ -508,7 +588,7 @@ function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
   }
 
   return (
-    <DashboardShell sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeView={activeView} setActiveView={setActiveView} clearance={clearance} currentTime={currentTime} currentUser={currentUser} onLogout={onLogout} role={role}>
+      <DashboardShell banner={<PrototypeBanner onQuickLogin={quickPrototypeLogin} />} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeView={activeView} setActiveView={setActiveView} clearance={clearance} currentTime={currentTime} currentUser={currentUser} onLogout={onLogout} role={role}>
       {activeView === "overview" ? (
         <OverviewView cases={cases} activeCases={activeCases} role={role} loadingCases={loadingCases} onOpenCase={setOpenedCase} onCreateCase={() => setShowNewCaseModal(true)} />
       ) : activeView === "cases" ? (
@@ -541,16 +621,11 @@ function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
 }
 
 // ── Dashboard Shell (sidebar + topbar wrapper) ───────────────────────
-function DashboardShell({ children, sidebarOpen, setSidebarOpen, activeView, setActiveView, clearance, currentTime, currentUser, onLogout, role }: any) {
+function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeView, setActiveView, clearance, currentTime, currentUser, onLogout, role }: any) {
   return (
     <div className="min-h-screen bg-obsidian-900 text-slate-200 flex font-sans overflow-hidden relative">
-      {/* Ambient glow */}
-      <motion.div
-        animate={{ opacity: [0.3, 0.5, 0.3] }}
-        transition={{ duration: 20, repeat: Infinity, repeatType: "reverse" }}
-        className="absolute inset-0 z-0 pointer-events-none"
-        style={{ background: "radial-gradient(circle at 30% 20%, rgba(212,175,55,0.04) 0%, transparent 50%)" }}
-      />
+      {/* Background: your bg.png when uploaded, else the default glow */}
+      <AppBackground />
 
       {/* Sidebar */}
       <motion.aside
@@ -560,7 +635,7 @@ function DashboardShell({ children, sidebarOpen, setSidebarOpen, activeView, set
         className="glass-panel z-20 border-r border-white/5 flex flex-col shrink-0"
       >
         <div className="h-20 flex items-center px-6 border-b border-white/5 gap-4">
-          <ShieldAlert size={28} className="text-cybergold shrink-0" />
+          <BrandLogo size={28} />
           <AnimatePresence>
             {sidebarOpen && (
               <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="font-mono font-bold tracking-[0.15em] text-white whitespace-nowrap text-sm">
@@ -625,6 +700,7 @@ function DashboardShell({ children, sidebarOpen, setSidebarOpen, activeView, set
 
         {/* Scrollable content area */}
         <div className="flex-1 overflow-y-auto scrollbar-hide">
+          {banner}
           {children}
         </div>
       </main>
@@ -786,14 +862,18 @@ function CaseCard({ caseItem, onClick }: { caseItem: CaseItem; onClick: () => vo
 
 // ── Case Detail View ─────────────────────────────────────────────────
 function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
-  const [tab, setTab] = useState<"documents" | "audit" | "ml">("documents");
+  const [tab, setTab] = useState<"documents" | "audit">("documents");
   const [docs, setDocs] = useState<DocItem[]>([]);
   const [auditTrail, setAuditTrail] = useState<AuditEvent[]>([]);
   const [mlData, setMlData] = useState<Record<string, { category: string; tags: string[]; status: string; confidence: number }>>({});
+  // ML tag filter — clicking a tag chip shows only related evidence
   const [mlFilter, setMlFilter] = useState<string | null>(null);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [loadingAudit, setLoadingAudit] = useState(true);
-  const [loadingMl, setLoadingMl] = useState(true);
+  // All unique ML tags across this case's evidence (for the filter row)
+  const allMlTags = Array.from(new Set(Object.values(mlData).flatMap((d) => d.tags || [])));
+  // Docs visible under the active tag filter
+  const visibleDocs = mlFilter === null ? docs : docs.filter((doc) => (mlData[doc.id]?.tags || []).includes(mlFilter));
   const [modal, setModal] = useState<string | null>(null);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
 
@@ -804,7 +884,7 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
     Promise.all([
       api.getCaseDocuments(caseItem.id).then(setDocs).catch(() => {}),
       loadMlForCase(),
-    ]).finally(() => { setLoadingDocs(false); setLoadingMl(false); });
+    ]).finally(() => { setLoadingDocs(false); });
   }
 
   async function loadMlForCase() {
@@ -865,16 +945,36 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
         </button>
         <button onClick={() => setTab("audit")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "audit" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-slate-500 hover:text-white"}`}>
           AUDIT TRAIL <span className="ml-2 px-2 py-0.5 rounded-full bg-white/10 text-[10px]">{auditTrail.length}</span>
-         <button onClick={() => setTab("ml")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "ml" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-slate-500 hover:text-white"}`}>
-           ML TAGS <span className="ml-2 px-2 py-0.5 rounded-full bg-white/10 text-[10px]">{Object.keys(mlData).length}</span>
-         </button>
         </button>
+
       </div>
 
       {/* Tab Content */}
       <AnimatePresence mode="wait">
         {tab === "documents" && (
-          <motion.div key="docs" {...fadeSlideUp}>
+          <motion.div key="docs" {...fadeSlideUp} className="space-y-4">
+            {allMlTags.length > 0 && (
+              <div className="glass-panel rounded-xl px-4 py-3 flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-mono font-bold text-slate-500 tracking-widest flex items-center gap-1.5">
+                  <Brain size={12} className="text-cybergold" /> ML TAGS
+                </span>
+                <button onClick={() => setMlFilter(null)} className={`px-3 py-1 text-[10px] font-mono font-bold rounded-full border transition-all ${mlFilter === null ? "bg-cybergold/10 border-cybergold/30 text-cybergold" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"}`}>
+                  ALL {docs.length}
+                </button>
+                {allMlTags.map((tag) => {
+                  const n = docs.filter((d) => (mlData[d.id]?.tags || []).includes(tag)).length;
+                  return (
+                    <button key={tag} onClick={() => setMlFilter(mlFilter === tag ? null : tag)} className={`px-3 py-1 text-[10px] font-mono font-bold rounded-full border transition-all ${mlFilter === tag ? "bg-biometric/10 border-biometric/30 text-biometric" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"}`}>
+                      #{tag} {n > 0 && <span className="opacity-70">· {n}</span>}
+                    </button>
+                  );
+                })}
+                {mlFilter !== null && (
+                  <span className="text-[10px] font-mono text-slate-500">showing {visibleDocs.length} of {docs.length} — click the tag again to clear</span>
+                )}
+              </div>
+            )}
+
             {loadingDocs ? (
               <div className="py-16 text-center text-slate-500 font-mono text-sm">LOADING DOCUMENTS...</div>
             ) : docs.length === 0 ? (
@@ -883,22 +983,41 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
                 <p className="text-white font-bold font-mono mb-1">NO EVIDENCE FILED</p>
                 <p className="text-slate-500 text-sm">Add the first piece of evidence using the button above.</p>
               </div>
+            ) : visibleDocs.length === 0 ? (
+              <div className="glass-panel rounded-2xl py-16 text-center">
+                <Brain size={40} className="text-slate-700 mx-auto mb-4" />
+                <p className="text-white font-bold font-mono mb-1">NO EVIDENCE WITH THIS TAG</p>
+                <p className="text-slate-500 text-sm">No evidence in this case carries the tag #{mlFilter}.</p>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {docs.map((doc, i) => {
+                {visibleDocs.map((doc, i) => {
                   const DIcon = docIcon(doc.doc_type);
+                  const tags = mlData[doc.id]?.tags || [];
                   return (
                     <motion.div key={doc.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} onClick={() => setOpenDocId(doc.id)}
-                      className="glass-panel rounded-xl p-5 border border-white/5 hover:border-cybergold/30 transition-all cursor-pointer group flex items-center gap-4"
+                      className="glass-panel rounded-xl p-5 border border-white/5 hover:border-cybergold/30 transition-all cursor-pointer group"
                     >
-                      <div className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-cybergold transition-colors">
-                        <DIcon size={20} />
+                      <div className="flex items-center gap-4">
+                        <div className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-cybergold transition-colors">
+                          <DIcon size={20} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold text-white group-hover:text-cybergold transition-colors truncate">{doc.title}</div>
+                          <div className="text-[10px] font-mono text-slate-500 mt-0.5">{doc.doc_type?.replace(/_/g, " ")} · {doc.sensitivity_level}</div>
+                        </div>
+                        <StatusPill status={doc.status === "active" ? "Active" : doc.status} />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold text-white group-hover:text-cybergold transition-colors truncate">{doc.title}</div>
-                        <div className="text-[10px] font-mono text-slate-500 mt-0.5">{doc.doc_type?.replace(/_/g, " ")} · {doc.sensitivity_level}</div>
-                      </div>
-                      <StatusPill status={doc.status === "active" ? "Active" : doc.status} />
+                      {tags.length > 0 && (
+                        <div className="flex gap-1.5 flex-wrap mt-3" onClick={(e) => e.stopPropagation()}>
+                          {tags.map((tag) => (
+                            <button key={tag} onClick={() => setMlFilter(mlFilter === tag ? null : tag)} title={`Show only evidence tagged #${tag}`}
+                              className={`px-2 py-0.5 text-[9px] font-mono font-bold rounded-full border transition-all ${mlFilter === tag ? "bg-biometric/10 border-biometric/30 text-biometric" : "bg-white/5 border-white/10 text-slate-500 hover:text-biometric hover:border-biometric/30"}`}>
+                              #{tag}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </motion.div>
                   );
                 })}
