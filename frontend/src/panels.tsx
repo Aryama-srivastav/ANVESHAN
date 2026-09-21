@@ -140,49 +140,55 @@ export function VaultView({ onOpenDocument }: { onOpenDocument: (docId: string) 
 
   return (
     <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } }} initial="hidden" animate="show" className="max-w-7xl mx-auto p-8 space-y-6">
-      <motion.div variants={itemV}>
-        <div className="text-[10px] font-mono font-bold text-cybergold tracking-[0.2em] mb-2">EVIDENCE VAULT</div>
-        <h1 className="text-3xl font-bold text-ink font-mono tracking-wide mb-1">Semantic Search</h1>
-        <p className="text-[#6B7280] text-sm">Full-text, entity and tag search across all evidence you are authorised to see.</p>
+      <motion.div variants={itemV} className="glass-panel rounded-2xl p-6 panel-lift relative overflow-hidden">
+        <div aria-hidden className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#24407A] via-[#C9A36C] to-[#24407A]" />
+        <div className="text-[10px] font-mono font-bold text-[#9A7B2E] tracking-[0.24em] mb-2">EVIDENCE VAULT</div>
+        <h1 className="text-3xl font-bold text-[#16213c] font-serif tracking-wide mb-1">Semantic Search</h1>
+        <p className="text-[#3E4A63] text-sm font-medium">Full-text, entity and tag search across all evidence you are authorised to see.</p>
       </motion.div>
 
       <motion.form onSubmit={runSearch} variants={itemV} className="relative">
-        <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6B7280]" />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search titles, tags, metadata, document contents..." className="w-full h-12 pl-11 pr-28 bg-obsidian-800/60 backdrop-blur-xl border border-fileline rounded-xl text-sm font-mono text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all" />
-        <button type="submit" disabled={loading} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-4 bg-registry text-paper rounded-lg text-[10px] font-mono font-bold tracking-widest disabled:opacity-40 transition-all">
+        <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9A7B2E]" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search titles, tags, metadata, document contents..." className="w-full h-12 pl-11 pr-28 bg-[#FBF8F1]/90 border border-fileline rounded-xl text-sm font-mono text-[#16213c] placeholder:text-[#8A8578] placeholder:font-semibold focus:outline-none focus:border-[#24407A] focus:ring-2 focus:ring-[#24407A]/20 transition-all shadow-sm" />
+        <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} type="submit" disabled={loading} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-4 bg-gradient-to-r from-[#24407A] to-[#1B2A4A] text-white rounded-lg text-[10px] font-mono font-bold tracking-widest disabled:opacity-40 transition-all shadow">
           {loading ? "..." : "SEARCH"}
-        </button>
+        </motion.button>
       </motion.form>
 
       {meta && hits && hits.length > 0 && (
-        <div className="text-[10px] font-mono text-[#6B7280] tracking-wider">
+        <div className="text-[10px] font-mono font-bold text-[#3E4A63] tracking-wider bg-[#1E6B4A]/10 border border-[#1E6B4A]/20 px-3 py-1.5 rounded-full w-fit">
           {meta.total} MATCH{meta.total === 1 ? "" : "ES"} · {meta.took_ms}MS
         </div>
       )}
 
       {/* Pinned evidence strip */}
       {pinned.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap gap-2 items-center gap-x-3">
-          <span className="text-[9px] font-mono font-bold text-cybergold tracking-widest uppercase">PINNED</span>
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel rounded-xl px-4 py-3 flex flex-wrap gap-2 items-center gap-x-3">
+          <span className="text-[9px] font-mono font-bold text-[#9A7B2E] tracking-widest uppercase flex items-center gap-1.5"><Pin size={11} /> PINNED</span>
           {pinned.map((p) => (
-            <button key={p.document_id} onClick={() => togglePin(p)} aria-label={`Unpin ${p.title}`} title="Unpin this evidence"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-obsidian-700 border border-cybergold/30 text-cybergold hover:bg-cybergold/10 transition-all">
-              <Pin size={11} className="fill-cybergold/30" />
+            <motion.button whileHover={{ scale: 1.05 }} key={p.document_id} onClick={() => togglePin(p)} aria-label={`Unpin ${p.title}`} title="Unpin this evidence"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#9A7B2E]/15 border border-[#9A7B2E]/40 text-[#7A5F1F] hover:bg-[#9A7B2E]/25 transition-all font-bold">
+              <Pin size={11} className="fill-[#9A7B2E]/40" />
               <span className="text-[9px] font-mono max-w-[180px] truncate">{p.title}</span>
-              <X size={10} className="text-[#6B7280] hover:text-cybergold" />
-            </button>
+              <X size={10} className="text-[#3E4A63] hover:text-[#7A1F2B]" />
+            </motion.button>
           ))}
-          <button onClick={clearPins} className="text-[8px] font-mono text-[#6B7280] hover:text-cybergold underline">CLEAR ALL</button>
+          <button onClick={clearPins} className="text-[8px] font-mono font-bold text-[#3E4A63] hover:text-[#7A1F2B] underline">CLEAR ALL</button>
         </motion.div>
       )}
 
       <motion.div variants={itemV} className="space-y-4">
         {loading ? (
-          <div className="py-16 text-center text-[#6B7280] font-mono text-sm">SEARCHING...</div>
+          <div className="glass-panel rounded-2xl py-16 text-center text-[#3E4A63] font-mono text-sm font-bold flex items-center justify-center gap-3">
+            <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.1, repeat: Infinity, ease: "linear" }} className="w-4 h-4 rounded-full border-2 border-[#24407A]/30 border-t-[#24407A]" />
+            SEARCHING...
+          </div>
         ) : hits === null || hits.length === 0 ? (
-          <div className="glass-panel rounded-2xl py-16 text-center">
-            <Search size={40} className="text-[#B9AE93] mx-auto mb-4" />
-            <p className="text-[#6B7280] font-mono text-sm">{hits === null ? "ENTER A QUERY" : "NO MATCHING EVIDENCE"}</p>
+          <div className="glass-panel rounded-2xl py-16 text-center panel-lift">
+            <motion.div animate={{ y: [0, -6, 0] }} transition={{ duration: 3, repeat: Infinity }}>
+              <Search size={40} className="text-[#9A7B2E] mx-auto mb-4" />
+            </motion.div>
+            <p className="text-[#3E4A63] font-mono text-sm font-bold">{hits === null ? "ENTER A QUERY" : "NO MATCHING EVIDENCE"}</p>
           </div>
         ) : (
           hits.map((hit: SearchHit) => (
@@ -203,41 +209,42 @@ export function VaultView({ onOpenDocument }: { onOpenDocument: (docId: string) 
 function HitCard({ hit, onOpenDocument, pinned = false, onPin }: { hit: SearchHit; onOpenDocument: (docId: string) => void; pinned?: boolean; onPin?: () => void }) {
   const DIcon = docIcon(hit.doc_type);
   return (
-    <motion.div whileHover={{ y: -2 }} onClick={() => onOpenDocument(hit.document_id)}
-      className="glass-panel rounded-xl p-5 border border-fileline cursor-pointer group hover:border-cybergold/40 transition-all">
+    <motion.div whileHover={{ y: -3 }} onClick={() => onOpenDocument(hit.document_id)}
+      className="glass-panel rounded-xl p-5 cursor-pointer group panel-lift relative overflow-hidden">
+      <div aria-hidden className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#C9A36C] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
       <div className="flex items-start gap-4">
-        <div className="w-11 h-11 rounded-xl bg-obsidian-700 flex items-center justify-center text-[#6B7280] group-hover:text-cybergold shrink-0 transition-colors">
+        <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#24407A]/15 to-[#9A7B2E]/10 border border-[#24407A]/20 flex items-center justify-center text-[#24407A] group-hover:text-[#9A7B2E] shrink-0 transition-colors">
           <DIcon size={20} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm font-bold text-ink group-hover:text-cybergold transition-colors">{hit.title}</span>
-            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-cybergold/10 text-cybergold border border-cybergold/20">SCORE {hit.score.toFixed(2)}</span>
+            <span className="text-sm font-bold text-[#16213c] group-hover:text-[#24407A] transition-colors">{hit.title}</span>
+            <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded bg-[#9A7B2E]/15 text-[#7A5F1F] border border-[#9A7B2E]/35">SCORE {hit.score.toFixed(2)}</span>
             {hit.matched_fields.map((f: string) => (
-              <span key={f} className="text-[9px] font-mono px-2 py-0.5 rounded bg-obsidian-700 text-[#4B5563] border border-fileline">{f.toUpperCase()}</span>
+              <span key={f} className="text-[9px] font-mono font-bold px-2 py-0.5 rounded bg-[#24407A]/10 text-[#24407A] border border-[#24407A]/20">{f.toUpperCase()}</span>
             ))}
           </div>
-          <div className="text-[10px] font-mono text-[#6B7280] mt-1.5">
+          <div className="text-[10px] font-mono font-semibold text-[#3E4A63] mt-1.5">
             {hit.case_number} · {hit.case_title} · {hit.doc_type?.replace(/_/g, " ")} · {hit.sensitivity_level} · {hit.version_count} VERSION{hit.version_count === 1 ? "" : "S"}
           </div>
-          {hit.excerpt && <p className="text-xs text-[#4B5563] mt-2 line-clamp-2 font-mono">…{hit.excerpt}…</p>}
+          {hit.excerpt && <p className="text-xs text-[#3E4A63] font-medium mt-2 line-clamp-2">…{hit.excerpt}…</p>}
           {hit.tags.length > 0 && (
             <div className="flex gap-1.5 mt-2 flex-wrap">
               {hit.tags.map((t: string) => (
-                <span key={t} className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-biometric/10 text-biometric border border-biometric/20">{t}</span>
+                <span key={t} className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#1E6B4A]/10 text-[#1E6B4A] border border-[#1E6B4A]/25">{t}</span>
               ))}
             </div>
           )}
         </div>
                 <div className="flex flex-col items-end gap-2">
-          <div className="text-[10px] font-mono text-[#6B7280] whitespace-nowrap">{formatDate(hit.activity_at)}</div>
+          <div className="text-[10px] font-mono font-bold text-[#3E4A63] whitespace-nowrap">{formatDate(hit.activity_at)}</div>
           {onPin && (
-            <button onClick={(e) => { e.stopPropagation(); onPin(); }}
+            <motion.button whileHover={{ scale: 1.12 }} whileTap={{ scale: 0.9 }} onClick={(e) => { e.stopPropagation(); onPin(); }}
               aria-label={pinned ? "Unpin evidence" : "Pin evidence"}
               title={pinned ? "Unpin this evidence" : "Pin this evidence"}
-              className={`p-1 rounded-md transition-all ${pinned ? "bg-cybergold text-obsidian-900" : "bg-obsidian-700 text-[#6B7280] hover:text-cybergold hover:bg-cybergold/10"}`}>
-              <Pin size={12} className={pinned ? "fill-obsidian-900" : ""} />
-            </button>
+              className={`p-1.5 rounded-lg transition-all shadow-sm ${pinned ? "bg-gradient-to-br from-[#9A7B2E] to-[#7A5F1F] text-white" : "bg-[#24407A]/10 text-[#24407A] hover:bg-[#24407A] hover:text-white border border-[#24407A]/25"}`}>
+              <Pin size={12} className={pinned ? "fill-white" : ""} />
+            </motion.button>
           )}
         </div>
       </div>

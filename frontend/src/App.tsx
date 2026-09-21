@@ -50,25 +50,44 @@ function BrandLogo({ size = 28, boxClass = "", iconFallback }: { size?: number; 
   return <Fallback size={size} className="text-cybergold shrink-0" />;
 }
 
-/** Background layer: your bg.png when uploaded, else the default glow. */
+/** Background layer: your bg.png when uploaded, else a registry-hall gradient.
+    Kept subtle — body already carries the texture; this adds depth in the shell. */
 function AppBackground() {
   const hasBg = useBrandAsset(BRAND_BG_URL);
   if (hasBg) {
     return (
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        <img src={BRAND_BG_URL} alt="" aria-hidden
-          className="w-full h-full object-cover opacity-40" />
-        <div className="absolute inset-0 bg-gradient-to-b from-obsidian-900/70 via-obsidian-900/80 to-obsidian-900/90" />
+      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
+        <motion.img src={BRAND_BG_URL} alt="" aria-hidden
+          initial={{ scale: 1.06 }}
+          animate={{ scale: 1 }}
+          transition={{ duration: 2.2, ease: [0.22, 0.75, 0.25, 1] }}
+          className="w-full h-full object-cover opacity-50" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#F4EFE4]/60 via-[#F4EFE4]/78 to-[#F4EFE4]/90" />
+        {/* slow drifting sheen so the backdrop feels alive, never static */}
+        <motion.div
+          animate={{ x: ["-10%", "10%", "-10%"] }}
+          transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute inset-y-0 -left-1/4 w-1/2"
+          style={{ background: "linear-gradient(100deg, transparent, rgba(154,123,46,0.07), transparent)" }}
+        />
       </div>
     );
   }
   return (
-    <motion.div
-      animate={{ opacity: [0.3, 0.5, 0.3] }}
-      transition={{ duration: 20, repeat: Infinity, repeatType: "reverse" }}
-      className="absolute inset-0 z-0 pointer-events-none"
-      style={{ background: "radial-gradient(circle at 30% 20%, rgba(212,175,55,0.04) 0%, transparent 50%)" }}
-    />
+    <>
+      <motion.div
+        animate={{ opacity: [0.35, 0.6, 0.35], scale: [1, 1.04, 1] }}
+        transition={{ duration: 14, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+        className="absolute inset-0 z-0 pointer-events-none"
+        style={{ background: "radial-gradient(circle at 25% 15%, rgba(36,64,122,0.10) 0%, transparent 55%), radial-gradient(circle at 80% 85%, rgba(154,123,46,0.12) 0%, transparent 50%)" }}
+      />
+      <motion.div
+        animate={{ y: [0, -14, 0] }}
+        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute inset-0 z-0 pointer-events-none opacity-[0.5]"
+        style={{ backgroundImage: "radial-gradient(rgba(27,42,74,0.10) 1px, transparent 1px)", backgroundSize: "26px 26px" }}
+      />
+    </>
   );
 }
 
@@ -301,9 +320,8 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
   // Grey registry gate. Before unlock: steel lock-pad with brass ring
   // holding the icon. After unlock: the pad dissolves, options appear.
   const [padGone, setPadGone] = useState(false);
-  const shellBg = unlocked
-    ? "bg-[#F4EFE4]"
-    : "bg-gradient-to-b from-[#6B7280] via-[#5B636E] to-[#4B5563]";
+  // Light registry hall behind the gate too — texture visible, soft wash.
+  const shellBg = "bg-[#EFE7D3]";
   function unlockGate() {
     if (unlocked) return;
     setUnlocked(true);
@@ -312,6 +330,13 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
 
   return (
     <div className={`min-h-screen ${shellBg} flex items-center justify-center relative overflow-hidden transition-colors duration-700`}>
+      {/* faint drifting texture accents behind the gate */}
+      <div aria-hidden className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 animate-drift opacity-60" style={{ backgroundImage: "radial-gradient(rgba(36,64,122,0.10) 1px, transparent 1px)", backgroundSize: "28px 28px" }} />
+        <motion.div animate={{ opacity: [0.4, 0.7, 0.4] }} transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute inset-0"
+          style={{ background: "radial-gradient(circle at 20% 12%, rgba(36,64,122,0.12), transparent 55%), radial-gradient(circle at 85% 88%, rgba(154,123,46,0.14), transparent 52%)" }} />
+      </div>
       {/* Steel lock-pad gate — click the icon to dissolve */}
       {!padGone && (
         <motion.div
@@ -321,17 +346,22 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
           className="absolute inset-0 flex items-center justify-center z-20"
         >
           <div role="button" tabIndex={0} aria-label="Authenticate" onClick={unlockGate} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); unlockGate(); } }} className="relative flex flex-col items-center cursor-pointer">
-            {/* Grey steel pad */}
-            <div className="relative flex items-center justify-center w-56 h-56 rounded-full bg-gradient-to-b from-[#5B636E] to-[#4B5563] border-[6px] border-[#CBD5E1]">
-              {/* Glowing brass seal ring */}
-              <div className="absolute -inset-2 rounded-full border-2 border-[#C9A36C] shadow-[0_0_22px_rgba(154,123,46,0.45)]" />
+            {/* Steel pad, lighter so the brass ring + icon pop */}
+            <motion.div animate={{ y: [0, -6, 0] }} transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+              className="relative flex items-center justify-center w-56 h-56 rounded-full bg-gradient-to-b from-[#9AA3B2] via-[#7C8698] to-[#5B636E] border-[6px] border-[#E8E2D2] shadow-[0_18px_50px_rgba(27,42,74,0.35)]">
+              {/* Pulsing brass seal ring */}
+              <div className="absolute -inset-2 rounded-full border-2 border-[#C9A36C] animate-seal" />
               {/* Centered icon (fingerprint fallback via BrandLogo) */}
-              <div className="relative flex items-center justify-center w-28 h-28 rounded-2xl bg-[#F4EFE4] border border-[#D8CFB8] overflow-hidden">
+              <div className="relative flex items-center justify-center w-28 h-28 rounded-2xl bg-[#FBF8F1] border border-[#D8CFB8] overflow-hidden shadow-inner">
                 <BrandLogo size={64} iconFallback={Fingerprint} />
               </div>
-            </div>
-            <h1 className="mt-6 text-xl font-bold font-serif tracking-[0.3em] text-[#F4EFE4]">ANVESHAN</h1>
-            <p className="mt-2 text-[9px] font-mono tracking-widest text-[#D8CFB8] uppercase">CLICK TO AUTHENTICATE</p>
+              {/* shine sweep across the pad */}
+              <div aria-hidden className="absolute inset-0 overflow-hidden rounded-full pointer-events-none">
+                <div className="absolute top-0 bottom-0 w-1/3" style={{ background: "linear-gradient(100deg, transparent, rgba(255,255,255,0.35), transparent)", animation: "shine-sweep 4.5s ease-in-out infinite" }} />
+              </div>
+            </motion.div>
+            <h1 className="mt-6 text-xl font-bold font-serif tracking-[0.3em] text-[#1B2A4A]">ANVESHAN</h1>
+            <p className="mt-2 text-[9px] font-mono tracking-widest text-[#4A5568] uppercase">CLICK TO AUTHENTICATE</p>
           </div>
         </motion.div>
       )}
@@ -341,14 +371,23 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, ease: [0.22, 0.75, 0.25, 1] }}
-          className="w-full max-w-md mx-auto p-8"
+          className="w-full max-w-md mx-auto p-8 relative z-10"
         >
-          <div className="flex items-center justify-center gap-3 mb-8">
-            <BrandLogo size={36} />
-            <h1 className="text-2xl font-bold font-serif text-[#1B2A4A] tracking-wide">ANVESHAN</h1>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+            className="glass-panel rounded-2xl p-7 panel-lift relative overflow-hidden">
+            {/* brass top-rule + corner seal */}
+            <div aria-hidden className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#9A7B2E] via-[#C9A36C] to-[#9A7B2E]" />
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <motion.div animate={{ y: [0, -3, 0] }} transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}>
+              <BrandLogo size={38} />
+            </motion.div>
+            <div>
+              <h1 className="text-2xl font-bold font-serif text-[#16213c] tracking-wide leading-none">ANVESHAN</h1>
+              <p className="text-[9px] font-mono tracking-[0.28em] text-[#9A7B2E] mt-1">SECURE DOCUMENT REGISTRY</p>
+            </div>
           </div>
-          <h2 className="text-2xl font-bold text-center text-[#1B2A4A] mb-2 font-serif">Evidence Registry</h2>
-          <p className="text-center text-[#6B7280] text-sm mb-8">Sign in with your assigned clearance level.</p>
+          <h2 className="text-xl font-bold text-center text-[#16213c] mb-1 font-serif">Evidence Registry</h2>
+          <p className="text-center text-[#3E4A63] text-sm mb-6 font-medium">Sign in with your assigned clearance level.</p>
           {/* Mode selector */}
           <div className="flex gap-2 mb-6">
             {([["prototype", "ROLE ACCESS"], ["officer", "OFFICER LOGIN"], ["viewer", "PUBLIC VIEWER"]] as [typeof mode, string][]).map(([key, label]) => (
@@ -445,15 +484,16 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
           )}
 
           {error && (
-            <motion.div {...fadeSlideUp} className="mt-6 p-4 bg-[#7A1F2B]/10 border border-[#7A1F2B]/30 rounded-xl text-[#7A1F2B] text-sm font-mono">
+            <motion.div {...fadeSlideUp} className="mt-5 p-4 bg-[#7A1F2B]/10 border border-[#7A1F2B]/30 rounded-xl text-[#7A1F2B] text-sm font-mono">
               {error}
             </motion.div>
           )}
 
-          <div className="mt-10 flex items-center justify-center gap-3 text-[10px] text-[#6B7280] font-mono">
-            <Lock size={12} />
+          <div className="mt-7 flex items-center justify-center gap-3 text-[10px] text-[#3E4A63] font-mono">
+            <motion.span animate={{ scale: [1, 1.25, 1] }} transition={{ duration: 2, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full bg-[#1E6B4A]" />
             <span>AES-256 · JWT · MFA ACTIVE · SESSION ENCRYPTED</span>
           </div>
+          </motion.div>
         </motion.div>
       )}
     </div>
@@ -472,6 +512,9 @@ function Dashboard({ role, onLogout, onLogin }: { role: string; onLogout: () => 
   const [toast, setToast] = useState("");
   const [showNewCaseModal, setShowNewCaseModal] = useState(false);
   const [openDocId, setOpenDocId] = useState<string | null>(null);
+  // Tracks the newest case so the list can scroll to it + flash it after create.
+  const [flashCaseId, setFlashCaseId] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString("en-GB", { hour12: false })), 1000);
@@ -505,6 +548,28 @@ function Dashboard({ role, onLogout, onLogin }: { role: string; onLogout: () => 
   function notify(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 3500);
+  }
+
+  // After a case is created: jump to the Case Files view, reload, then smooth-
+  // scroll the new card into view and flash it so the click has a visible payoff.
+  async function handleCaseCreated(created: any) {
+    setShowNewCaseModal(false);
+    setFlashCaseId(created?.id ?? null);
+    // If we are on overview, switch to the full case list where the card lives.
+    setActiveView("cases");
+    try {
+      const data = await api.listCases();
+      setCases(Array.isArray(data) ? data : []);
+    } catch { /* keep existing list on failure */ }
+    setLoadingCases(false);
+    notify(`Case file ${created?.case_number || "created"} sealed`);
+    // Wait a beat for the list to render, then scroll to the new card.
+    setTimeout(() => {
+      const el = created?.id ? document.getElementById(`case-card-${created.id}`) : null;
+      (el ?? contentRef.current)?.scrollIntoView({ behavior: "smooth", block: el ? "center" : "start" });
+    }, 350);
+    // Stop flashing after a few seconds.
+    setTimeout(() => setFlashCaseId((cur) => (created?.id && cur === created.id ? null : cur)), 6000);
   }
 
   const clearance = CLEARANCE_MAP[role] || CLEARANCE_MAP.viewer;
@@ -543,7 +608,7 @@ function Dashboard({ role, onLogout, onLogin }: { role: string; onLogout: () => 
       {activeView === "overview" ? (
         <OverviewView cases={cases} activeCases={activeCases} role={role} loadingCases={loadingCases} onOpenCase={setOpenedCase} onCreateCase={() => setShowNewCaseModal(true)} />
       ) : activeView === "cases" ? (
-        <CasesListView cases={cases} role={role} loading={loadingCases} onOpenCase={setOpenedCase} onCreateCase={() => setShowNewCaseModal(true)} />
+        <CasesListView cases={cases} role={role} loading={loadingCases} flashCaseId={flashCaseId} onOpenCase={setOpenedCase} onCreateCase={() => setShowNewCaseModal(true)} />
       ) : activeView === "vault" ? (
         <VaultView onOpenDocument={setOpenDocId} />
       ) : activeView === "departments" ? (
@@ -563,7 +628,7 @@ function Dashboard({ role, onLogout, onLogin }: { role: string; onLogout: () => 
       {showNewCaseModal && (
         <NewCaseModal
           onClose={() => setShowNewCaseModal(false)}
-          onSuccess={() => { setShowNewCaseModal(false); loadCases(); notify("Case file created & sealed"); }}
+          onSuccess={handleCaseCreated}
         />
       )}
       <Toast message={toast} />
@@ -574,7 +639,7 @@ function Dashboard({ role, onLogout, onLogin }: { role: string; onLogout: () => 
 // ── Dashboard Shell (sidebar + topbar wrapper) ───────────────────────
 function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeView, setActiveView, clearance, currentTime, currentUser, onLogout, role }: any) {
   return (
-    <div className="min-h-screen bg-obsidian-900 text-ink flex font-sans overflow-hidden relative">
+    <div className="min-h-screen text-ink flex font-sans overflow-hidden relative" style={{ color: "#16213c" }}>
       {/* Background: your bg.png when uploaded, else the default glow */}
       <AppBackground />
 
@@ -583,14 +648,17 @@ function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeV
         initial={false}
         animate={{ width: sidebarOpen ? 260 : 80 }}
         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className="glass-panel z-20 border-r border-fileline flex flex-col shrink-0"
+        className="glass-panel z-20 border-r border-fileline flex flex-col shrink-0 shadow-[8px_0_30px_rgba(27,42,74,0.10)]"
       >
-        <div className="h-20 flex items-center px-6 border-b border-fileline gap-4">
-          <BrandLogo size={28} />
+        <div className="h-20 flex items-center px-6 border-b border-fileline gap-4 bg-gradient-to-r from-[#24407A]/[.06] to-transparent">
+          <motion.div whileHover={{ rotate: [0, -8, 8, 0] }} transition={{ duration: 0.5 }}>
+            <BrandLogo size={30} />
+          </motion.div>
           <AnimatePresence>
             {sidebarOpen && (
-              <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="font-mono font-bold tracking-[0.15em] text-ink whitespace-nowrap text-sm">
-                ANVESHAN
+              <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="whitespace-nowrap">
+                <div className="font-mono font-bold tracking-[0.15em] text-ink text-sm leading-none">ANVESHAN</div>
+                <div className="text-[8px] font-mono tracking-[0.3em] text-[#9A7B2E] mt-1">EVIDENCE REGISTRY</div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -627,30 +695,30 @@ function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeV
       {/* Main Content */}
       <main className="flex-1 flex flex-col z-10 h-screen overflow-hidden">
         {/* Security Hero Banner */}
-        <header className="h-16 glass-panel border-b border-fileline px-8 flex items-center justify-between shrink-0">
+        <header className="h-16 glass-panel border-b border-fileline px-8 flex items-center justify-between shrink-0 bg-gradient-to-r from-[#24407A]/[.05] via-transparent to-[#9A7B2E]/[.05]">
           <div className="flex items-center gap-6">
-            <div className={`px-3 py-1 rounded-full ${clearance.bg} border ${clearance.border} flex items-center gap-2`}>
+            <motion.div whileHover={{ scale: 1.04 }} className={`px-3 py-1 rounded-full ${clearance.bg} border ${clearance.border} flex items-center gap-2`}>
               <ShieldCheck size={14} className={clearance.color} />
               <span className={`text-[10px] font-mono font-bold ${clearance.color} tracking-widest`}>{clearance.label}</span>
-            </div>
+            </motion.div>
             <div className="flex items-center gap-2">
-              <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full bg-biometric shadow-[0_0_6px_rgba(36,64,122,0.45)]" />
-              <span className="text-[10px] font-mono text-biometric/70 tracking-widest">ENCRYPTED</span>
+              <motion.div animate={{ opacity: [1, 0.3, 1], scale: [1, 1.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full bg-biometric shadow-[0_0_6px_rgba(36,64,122,0.45)]" />
+              <span className="text-[10px] font-mono text-biometric font-bold tracking-widest">ENCRYPTED</span>
             </div>
           </div>
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 text-[#6B7280] font-mono text-sm">
+            <div className="flex items-center gap-2 text-[#3E4A63] font-mono text-sm font-semibold">
               <Clock size={14} />
               <span className="tracking-wider tabular-nums">{currentTime}</span>
             </div>
-            <button onClick={onLogout} className="text-[10px] font-bold text-[#6B7280] hover:text-seal transition-colors tracking-widest font-mono">
+            <button onClick={onLogout} className="text-[10px] font-bold text-[#3E4A63] hover:text-seal transition-colors tracking-widest font-mono px-3 py-1.5 rounded-lg hover:bg-seal/10 border border-transparent hover:border-seal/20">
               TERMINATE
             </button>
           </div>
         </header>
 
-        {/* Scrollable content area */}
-        <div className="flex-1 overflow-y-auto scrollbar-hide">
+        {/* Scrollable content area — smooth scroll for post-create jumps */}
+        <div className="flex-1 overflow-y-auto scrollbar-hide scroll-smooth">
           {banner}
           {children}
         </div>
@@ -662,18 +730,19 @@ function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeV
 // ── NavItem ──────────────────────────────────────────────────────────
 function NavItem({ icon: Icon, label, active, isOpen, onClick }: any) {
   return (
-    <button onClick={onClick} className={`w-full flex items-center h-11 rounded-xl transition-all duration-200 group ${active ? "bg-cybergold/10 border border-cybergold/20" : "hover:bg-ink/5 border border-transparent"}`}>
-      <div className={`w-11 h-11 shrink-0 flex items-center justify-center ${active ? "text-cybergold" : "text-[#6B7280] group-hover:text-ink"}`}>
+    <motion.button whileHover={{ x: 3 }} whileTap={{ scale: 0.98 }} onClick={onClick} className={`w-full flex items-center h-11 rounded-xl transition-all duration-200 group relative overflow-hidden ${active ? "bg-gradient-to-r from-cybergold/20 to-cybergold/5 border border-cybergold/30 shadow-[0_2px_10px_rgba(154,123,46,0.15)]" : "hover:bg-ink/5 border border-transparent"}`}>
+      {active && <motion.div layoutId="nav-glow" className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-7 rounded-full bg-gradient-to-b from-[#C9A36C] to-[#9A7B2E]" />}
+      <div className={`w-11 h-11 shrink-0 flex items-center justify-center ${active ? "text-[#9A7B2E]" : "text-[#4A5568] group-hover:text-ink"}`}>
         <Icon size={18} />
       </div>
       <AnimatePresence>
         {isOpen && (
-          <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={{ opacity: 0, width: 0 }} className={`text-xs font-mono tracking-wide whitespace-nowrap overflow-hidden ${active ? "text-registry font-bold" : "text-[#6B7280] group-hover:text-ink"}`}>
+          <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={{ opacity: 0, width: 0 }} className={`text-xs font-mono tracking-wide whitespace-nowrap overflow-hidden ${active ? "text-registry font-bold" : "text-[#4A5568] group-hover:text-ink"}`}>
             {label}
           </motion.span>
         )}
       </AnimatePresence>
-    </button>
+    </motion.button>
   );
 }
 
@@ -683,18 +752,24 @@ function OverviewView({ cases, activeCases, role, loadingCases, onOpenCase, onCr
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="show" className="max-w-7xl mx-auto p-8 space-y-8">
-      {/* Header */}
-      <motion.div variants={staggerItem} className="flex items-end justify-between">
-        <div>
-          <div className="text-[10px] font-mono font-bold text-cybergold tracking-[0.2em] mb-2">COMMAND CENTER</div>
-          <h1 className="text-3xl font-bold text-ink font-mono tracking-wide">Secure Dashboard</h1>
-          <p className="text-[#6B7280] text-sm mt-1">Your classified workspace. All actions are logged.</p>
+      {/* Header — registry masthead with animated rule */}
+      <motion.div variants={staggerItem} className="glass-panel rounded-2xl p-6 panel-lift relative overflow-hidden">
+        <div aria-hidden className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#24407A] via-[#C9A36C] to-[#24407A]" />
+        <div className="flex items-end justify-between">
+          <div>
+            <div className="text-[10px] font-mono font-bold text-[#9A7B2E] tracking-[0.24em] mb-2 flex items-center gap-2">
+              <motion.span animate={{ scale: [1, 1.4, 1] }} transition={{ duration: 2, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full bg-[#9A7B2E]" />
+              COMMAND CENTER
+            </div>
+            <h1 className="text-3xl font-bold text-[#16213c] font-serif tracking-wide">Secure Dashboard</h1>
+            <p className="text-[#3E4A63] text-sm mt-1 font-medium">Your classified workspace. All actions are logged.</p>
+          </div>
+          {canCreate && (
+            <motion.button whileHover={{ y: -2, scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={onCreateCase} className="h-11 px-5 bg-gradient-to-r from-[#24407A] to-[#1B2A4A] text-white font-bold font-mono text-xs tracking-widest rounded-xl flex items-center gap-2 shadow-[0_6px_20px_rgba(36,64,122,0.35)] hover:shadow-[0_8px_26px_rgba(36,64,122,0.45)] transition-all">
+              <Plus size={16} /> NEW CASE
+            </motion.button>
+          )}
         </div>
-        {canCreate && (
-          <button onClick={onCreateCase} className="h-11 px-5 bg-registry text-paper font-bold font-mono text-xs tracking-widest rounded-xl flex items-center gap-2 hover:shadow-[0_0_20px_rgba(36,64,122,0.25)] transition-all hover:-translate-y-0.5">
-            <Plus size={16} /> NEW CASE
-          </button>
-        )}
       </motion.div>
 
       {/* Metrics */}
@@ -706,17 +781,22 @@ function OverviewView({ cases, activeCases, role, loadingCases, onOpenCase, onCr
       </div>
 
       {/* Recent Cases */}
-      <motion.div variants={staggerItem} className="glass-panel rounded-2xl overflow-hidden">
-        <div className="px-6 py-5 border-b border-fileline flex items-center justify-between">
-          <h2 className="text-sm font-mono font-bold text-ink tracking-widest">RECENT CASE FILES</h2>
-          <span className="text-[10px] font-mono text-[#6B7280] tracking-wider">{cases.length} RECORDS</span>
+      <motion.div variants={staggerItem} className="glass-panel rounded-2xl overflow-hidden panel-lift">
+        <div className="px-6 py-5 border-b border-fileline flex items-center justify-between bg-gradient-to-r from-[#24407A]/[.05] to-transparent">
+          <h2 className="text-sm font-mono font-bold text-[#16213c] tracking-widest flex items-center gap-2">
+            <FolderOpen size={15} className="text-[#9A7B2E]" />
+            RECENT CASE FILES
+          </h2>
+          <span className="text-[10px] font-mono text-[#3E4A63] font-bold tracking-wider bg-[#24407A]/10 px-2.5 py-1 rounded-full border border-[#24407A]/20">{cases.length} RECORDS</span>
         </div>
         {loadingCases ? (
-          <div className="py-16 text-center text-[#6B7280] text-sm font-mono">LOADING RECORDS...</div>
+          <div className="py-16 text-center text-[#3E4A63] text-sm font-mono font-bold">LOADING RECORDS...</div>
         ) : cases.length === 0 ? (
           <div className="py-16 text-center">
-            <FolderOpen size={40} className="text-[#B9AE93] mx-auto mb-4" />
-            <p className="text-[#6B7280] text-sm font-mono">NO CASE FILES FOUND</p>
+            <motion.div animate={{ y: [0, -6, 0] }} transition={{ duration: 3, repeat: Infinity }}>
+              <FolderOpen size={40} className="text-[#B9AE93] mx-auto mb-4" />
+            </motion.div>
+            <p className="text-[#3E4A63] text-sm font-mono font-bold">NO CASE FILES FOUND</p>
           </div>
         ) : (
           <div className="divide-y divide-fileline">
@@ -725,16 +805,17 @@ function OverviewView({ cases, activeCases, role, loadingCases, onOpenCase, onCr
                 key={c.id}
                 initial={{ opacity: 0, x: -16 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 * i }}
+                transition={{ delay: 0.06 * i }}
+                whileHover={{ x: 4 }}
                 onClick={() => onOpenCase(c)}
-                className="flex items-center gap-5 px-6 py-4 hover:bg-ink/[0.03] cursor-pointer transition-all group"
+                className="flex items-center gap-5 px-6 py-4 hover:bg-[#24407A]/[.04] cursor-pointer transition-all group"
               >
-                <div className="w-10 h-10 rounded-xl bg-obsidian-700 flex items-center justify-center text-[#6B7280] group-hover:text-cybergold transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#24407A]/15 to-[#9A7B2E]/10 border border-[#24407A]/20 flex items-center justify-center text-[#24407A] group-hover:text-[#9A7B2E] group-hover:border-[#9A7B2E]/40 transition-colors">
                   <FolderOpen size={18} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-ink group-hover:text-cybergold transition-colors">{c.title}</div>
-                  <div className="text-[11px] text-[#6B7280] font-mono mt-0.5">{c.case_number} · {formatDate(c.created_at)}</div>
+                  <div className="text-sm font-bold text-[#16213c] group-hover:text-[#24407A] transition-colors">{c.title}</div>
+                  <div className="text-[11px] text-[#3E4A63] font-mono mt-0.5">{c.case_number} · {formatDate(c.created_at)}</div>
                 </div>
                 <StatusPill status={c.status} />
               </motion.div>
@@ -747,42 +828,59 @@ function OverviewView({ cases, activeCases, role, loadingCases, onOpenCase, onCr
 }
 
 // ── Cases List View ──────────────────────────────────────────────────
-function CasesListView({ cases, role, loading, onOpenCase, onCreateCase }: any) {
+function CasesListView({ cases, role, loading, flashCaseId, onOpenCase, onCreateCase }: any) {
   const [search, setSearch] = useState("");
   const canCreate = role === "admin";
   const filtered = cases.filter((c: CaseItem) => `${c.case_number} ${c.title}`.toLowerCase().includes(search.toLowerCase()));
+  // Keep a DOM ref per card so a newly created case can be scrolled into view.
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  // When the dashboard flags a fresh case, scroll it into the centre of the
+  // scrollable content area. Cards carry id={`case-card-${id}`} as fallback.
+  useEffect(() => {
+    if (!flashCaseId) return;
+    const t = setTimeout(() => {
+      const el = cardRefs.current[flashCaseId] ?? document.getElementById(`case-card-${flashCaseId}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [flashCaseId, cases]);
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="show" className="max-w-7xl mx-auto p-8 space-y-6">
-      <motion.div variants={staggerItem} className="flex items-end justify-between">
-        <div>
-          <div className="text-[10px] font-mono font-bold text-cybergold tracking-[0.2em] mb-2">EVIDENCE VAULT</div>
-          <h1 className="text-3xl font-bold text-ink font-mono tracking-wide">Case Files</h1>
+      <motion.div variants={staggerItem} className="glass-panel rounded-2xl p-6 panel-lift relative overflow-hidden">
+        <div aria-hidden className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#9A7B2E] via-[#C9A36C] to-[#9A7B2E]" />
+        <div className="flex items-end justify-between">
+          <div>
+            <div className="text-[10px] font-mono font-bold text-[#9A7B2E] tracking-[0.24em] mb-2">EVIDENCE VAULT</div>
+            <h1 className="text-3xl font-bold text-[#16213c] font-serif tracking-wide">Case Files</h1>
+          </div>
+          {canCreate && (
+            <motion.button whileHover={{ y: -2, scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={onCreateCase} className="h-11 px-5 bg-gradient-to-r from-[#24407A] to-[#1B2A4A] text-white font-bold font-mono text-xs tracking-widest rounded-xl flex items-center gap-2 shadow-[0_6px_20px_rgba(36,64,122,0.35)] transition-all">
+              <Plus size={16} /> NEW CASE
+            </motion.button>
+          )}
         </div>
-        {canCreate && (
-          <button onClick={onCreateCase} className="h-11 px-5 bg-registry text-paper font-bold font-mono text-xs tracking-widest rounded-xl flex items-center gap-2 hover:shadow-[0_0_20px_rgba(36,64,122,0.25)] transition-all hover:-translate-y-0.5">
-            <Plus size={16} /> NEW CASE
-          </button>
-        )}
       </motion.div>
 
       <motion.div variants={staggerItem}>
         <div className="relative mb-6">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6B7280]" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Query database..." className="w-full h-12 pl-11 pr-4 bg-obsidian-800/60 backdrop-blur-xl border border-fileline rounded-xl text-sm font-mono text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all" />
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9A7B2E]" />
+          <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "/" && document.activeElement !== searchRef.current) { e.preventDefault(); searchRef.current?.focus(); } }} placeholder="Search by case number or title... ( / )" className="w-full h-12 pl-11 pr-4 bg-[#FBF8F1]/90 border border-fileline rounded-xl text-sm font-mono text-[#16213c] placeholder:text-[#8A8578] placeholder:font-semibold focus:outline-none focus:border-[#24407A] focus:ring-2 focus:ring-[#24407A]/20 transition-all shadow-sm" />
         </div>
       </motion.div>
 
       <motion.div variants={staggerItem} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         {loading ? (
-          <div className="col-span-full py-16 text-center text-[#6B7280] font-mono text-sm">LOADING...</div>
+          <div className="col-span-full py-16 text-center text-[#3E4A63] font-mono text-sm font-bold">LOADING...</div>
         ) : filtered.length === 0 ? (
           <div className="col-span-full py-16 text-center">
             <FolderOpen size={40} className="text-[#B9AE93] mx-auto mb-4" />
-            <p className="text-[#6B7280] font-mono text-sm">NO MATCHING RECORDS</p>
+            <p className="text-[#3E4A63] font-mono text-sm font-bold">NO MATCHING RECORDS</p>
           </div>
         ) : filtered.map((c: CaseItem) => (
-          <CaseCard key={c.id} caseItem={c} onClick={() => onOpenCase(c)} />
+          <CaseCard key={c.id} caseItem={c} flash={c.id === flashCaseId} cardRef={(el: HTMLDivElement | null) => { cardRefs.current[c.id] = el; }} onClick={() => onOpenCase(c)} />
         ))}
       </motion.div>
     </motion.div>
@@ -790,22 +888,34 @@ function CasesListView({ cases, role, loading, onOpenCase, onCreateCase }: any) 
 }
 
 // ── Case Card ────────────────────────────────────────────────────────
-function CaseCard({ caseItem, onClick }: { caseItem: CaseItem; onClick: () => void }) {
+function CaseCard({ caseItem, onClick, flash = false, cardRef }: { caseItem: CaseItem; onClick: () => void; flash?: boolean; cardRef?: (el: HTMLDivElement | null) => void }) {
   return (
     <motion.div
-      whileHover={{ y: -4, scale: 1.01 }}
+      ref={cardRef}
+      id={`case-card-${caseItem.id}`}
+      whileHover={{ y: -5, scale: 1.015 }}
+      whileTap={{ scale: 0.99 }}
       transition={{ type: "spring", stiffness: 400, damping: 25 }}
+      animate={flash ? { boxShadow: ["0 0 0 0 rgba(154,123,46,0.0)", "0 0 0 6px rgba(154,123,46,0.35)", "0 0 0 0 rgba(154,123,46,0.0)"] } : {}}
       onClick={onClick}
-      className="glass-panel rounded-xl p-6 border border-fileline cursor-pointer group hover:border-cybergold/40 hover:shadow-[0_0_20px_rgba(154,123,46,0.15)] transition-all duration-300"
+      title={`Open ${caseItem.case_number} — ${caseItem.title}`}
+      className={`glass-panel rounded-xl p-6 cursor-pointer group panel-lift relative overflow-hidden ${flash ? "border-[#9A7B2E]" : ""}`}
     >
+      {flash && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          className="absolute top-3 right-3 z-10 text-[8px] font-mono font-bold tracking-[0.2em] text-white bg-gradient-to-r from-[#9A7B2E] to-[#7A5F1F] px-2 py-0.5 rounded-full shadow">
+          NEWLY SEALED
+        </motion.div>
+      )}
+      <div aria-hidden className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#C9A36C] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
       <div className="flex items-start justify-between mb-4">
-        <div className="text-[10px] font-mono text-[#6B7280] tracking-widest">{caseItem.case_number}</div>
+        <div className="text-[10px] font-mono font-bold text-[#24407A] tracking-widest bg-[#24407A]/10 px-2 py-0.5 rounded border border-[#24407A]/20">{caseItem.case_number}</div>
         <StatusPill status={caseItem.status} />
       </div>
-      <h3 className="text-lg font-bold text-ink group-hover:text-cybergold transition-colors mb-2 leading-tight">{caseItem.title}</h3>
-      {caseItem.description && <p className="text-xs text-[#6B7280] line-clamp-2 mb-4">{caseItem.description}</p>}
-      <div className="pt-4 border-t border-fileline text-[10px] font-mono text-[#6B7280] tracking-wider">
-        FILED {formatDate(caseItem.created_at)}
+      <h3 className="text-lg font-bold font-serif text-[#16213c] group-hover:text-[#24407A] transition-colors mb-2 leading-tight">{caseItem.title}</h3>
+      {caseItem.description && <p className="text-xs text-[#3E4A63] font-medium line-clamp-2 mb-4">{caseItem.description}</p>}
+      <div className="pt-4 border-t border-fileline text-[10px] font-mono font-bold text-[#3E4A63] tracking-wider flex items-center gap-1.5">
+        <Clock size={11} /> FILED {formatDate(caseItem.created_at)}
       </div>
     </motion.div>
   );
@@ -861,41 +971,44 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
 
   return (
     <motion.div {...fadeSlideUp} className="max-w-6xl mx-auto p-8 space-y-6">
-      {/* Back */}
-      <button onClick={onBack} className="flex items-center gap-2 text-[#6B7280] hover:text-cybergold text-xs font-mono font-bold tracking-widest transition-colors">
+      {/* Back — returns to the case list that opened this dossier */}
+      <button onClick={onBack} title="Back to Case Files list" className="flex items-center gap-2 text-[#3E4A63] hover:text-[#24407A] text-xs font-mono font-bold tracking-widest transition-colors">
         <ArrowLeft size={14} /> ALL CASES
       </button>
 
-      {/* Header */}
-      <div className="glass-panel rounded-2xl p-8 flex items-start justify-between">
+      {/* Header — dossier masthead: number, title, status, counts */}
+      <div className="glass-panel rounded-2xl p-8 panel-lift relative overflow-hidden">
+        <div aria-hidden className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#24407A] via-[#C9A36C] to-[#24407A]" />
+        <div className="flex items-start justify-between">
         <div>
-          <div className="text-[10px] font-mono text-cybergold tracking-[0.2em] mb-2">{caseItem.case_number}</div>
-          <h1 className="text-3xl font-bold text-ink font-mono tracking-wide mb-3">{caseItem.title}</h1>
-          <div className="flex gap-3">
+          <div className="text-[10px] font-mono font-bold text-[#24407A] tracking-[0.2em] mb-2 bg-[#24407A]/10 px-2 py-0.5 rounded border border-[#24407A]/20 w-fit">{caseItem.case_number}</div>
+          <h1 className="text-3xl font-bold text-[#16213c] font-serif tracking-wide mb-3">{caseItem.title}</h1>
+          <div className="flex gap-3 items-center">
             <StatusPill status={caseItem.status} />
-            <span className="text-[10px] font-mono text-[#6B7280] tracking-wider flex items-center gap-1"><ClipboardList size={12} /> {docs.length} DOCUMENTS</span>
+            <span className="text-[10px] font-mono font-bold text-[#3E4A63] tracking-wider flex items-center gap-1"><ClipboardList size={12} /> {docs.length} DOCUMENTS</span>
           </div>
-          {caseItem.description && <p className="text-sm text-[#6B7280] mt-4 max-w-lg">{caseItem.description}</p>}
+          {caseItem.description && <p className="text-sm text-[#3E4A63] font-medium mt-4 max-w-lg">{caseItem.description}</p>}
         </div>
         {canWrite && (
           <div className="flex gap-3">
-            <button onClick={() => setModal("edit")} className="h-10 px-4 border border-fileline rounded-xl text-xs font-mono font-bold text-ink hover:bg-ink/5 hover:border-ink/20 transition-all flex items-center gap-2">
+            <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }} onClick={() => setModal("edit")} title="Edit case title, description and status" className="h-10 px-4 border border-fileline rounded-xl text-xs font-mono font-bold text-[#16213c] hover:bg-[#24407A]/[.06] hover:border-[#24407A]/30 transition-all flex items-center gap-2">
               <Settings2 size={14} /> EDIT
-            </button>
-            <button onClick={() => setModal("upload")} className="h-10 px-4 bg-registry text-paper rounded-xl text-xs font-mono font-bold flex items-center gap-2 hover:shadow-[0_0_15px_rgba(36,64,122,0.25)] transition-all">
+            </motion.button>
+            <motion.button whileHover={{ y: -1 }} whileTap={{ scale: 0.97 }} onClick={() => setModal("upload")} title="Attach a new sealed evidence file to this case" className="h-10 px-4 bg-gradient-to-r from-[#24407A] to-[#1B2A4A] text-white rounded-xl text-xs font-mono font-bold flex items-center gap-2 shadow-[0_6px_18px_rgba(36,64,122,0.35)] transition-all">
               <Upload size={14} /> ADD EVIDENCE
-            </button>
+            </motion.button>
           </div>
         )}
+        </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs — documents grid vs tamper-evident audit trail */}
       <div className="flex gap-1">
-        <button onClick={() => setTab("documents")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "documents" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-[#6B7280] hover:text-ink"}`}>
-          DOCUMENTS <span className="ml-2 px-2 py-0.5 rounded-full bg-ink/10 text-[10px]">{docs.length}</span>
+        <button onClick={() => setTab("documents")} title="Sealed evidence files in this case" className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "documents" ? "bg-[#FBF8F1] text-[#24407A] border-b-2 border-[#24407A] shadow-sm" : "text-[#3E4A63] hover:text-[#16213c]"}`}>
+          DOCUMENTS <span className="ml-2 px-2 py-0.5 rounded-full bg-[#24407A]/10 text-[10px]">{docs.length}</span>
         </button>
-        <button onClick={() => setTab("audit")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "audit" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-[#6B7280] hover:text-ink"}`}>
-          AUDIT TRAIL <span className="ml-2 px-2 py-0.5 rounded-full bg-ink/10 text-[10px]">{auditTrail.length}</span>
+        <button onClick={() => setTab("audit")} title="Every action on this case, hash-chained" className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "audit" ? "bg-[#FBF8F1] text-[#24407A] border-b-2 border-[#24407A] shadow-sm" : "text-[#3E4A63] hover:text-[#16213c]"}`}>
+          AUDIT TRAIL <span className="ml-2 px-2 py-0.5 rounded-full bg-[#24407A]/10 text-[10px]">{auditTrail.length}</span>
         </button>
 
       </div>
@@ -1046,13 +1159,15 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
 // ── Metric Card ──────────────────────────────────────────────────────
 function MetricCard({ title, value, icon: Icon, accent }: any) {
   return (
-    <motion.div variants={staggerItem} className="glass-panel rounded-xl p-6 glow-border relative overflow-hidden group hover:glow-border-hover">
-      <div className="absolute top-4 right-4 opacity-10 group-hover:opacity-20 transition-opacity duration-500">
-        <Icon size={64} className={accent ? "text-cybergold" : "text-ink"} />
-      </div>
+    <motion.div variants={staggerItem} whileHover={{ y: -4 }} className="glass-panel rounded-xl p-6 glow-border relative overflow-hidden group hover:glow-border-hover panel-lift">
+      <div aria-hidden className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[#C9A36C] to-transparent opacity-60" />
+      <motion.div animate={{ rotate: [0, 6, -6, 0], scale: [1, 1.05, 1] }} transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute top-4 right-4 opacity-[0.14] group-hover:opacity-25 transition-opacity duration-500">
+        <Icon size={64} className={accent ? "text-[#9A7B2E]" : "text-[#24407A]"} />
+      </motion.div>
       <div className="relative z-10">
-        <h3 className="text-[9px] font-mono font-bold text-[#6B7280] tracking-[0.2em] mb-5">{title}</h3>
-        <div className="text-3xl font-bold font-mono tracking-tight text-ink">{value}</div>
+        <h3 className="text-[9px] font-mono font-bold text-[#3E4A63] tracking-[0.2em] mb-5">{title}</h3>
+        <div className="text-3xl font-bold font-mono tracking-tight text-[#16213c]">{value}</div>
       </div>
     </motion.div>
   );
@@ -1061,17 +1176,17 @@ function MetricCard({ title, value, icon: Icon, accent }: any) {
 // ── Status Pill ──────────────────────────────────────────────────────
 function StatusPill({ status }: { status: string }) {
   const s = status?.toLowerCase() || "";
-  let cls = "bg-ink/10 text-[#4B5563] border-ink/20";
-  if (s === "active") cls = "bg-biometric/10 text-biometric border-biometric/20";
-  else if (s === "review") cls = "bg-cybergold/10 text-cybergold border-cybergold/20";
-  else if (s === "closed") cls = "bg-ink/5 text-[#4B5563] border-ink/15";
-  else if (s === "dissolved") cls = "bg-seal/10 text-seal border-seal/20";
+  let cls = "bg-[#24407A]/10 text-[#24407A] border-[#24407A]/25";
+  if (s === "active") cls = "bg-[#1E6B4A]/10 text-[#1E6B4A] border-[#1E6B4A]/25";
+  else if (s === "review") cls = "bg-[#9A7B2E]/15 text-[#7A5F1F] border-[#9A7B2E]/35";
+  else if (s === "closed") cls = "bg-[#3E4A63]/10 text-[#3E4A63] border-[#3E4A63]/25";
+  else if (s === "dissolved") cls = "bg-seal/10 text-seal border-seal/25";
 
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-mono font-bold tracking-widest border ${cls}`}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />
+    <motion.span whileHover={{ scale: 1.06 }} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-mono font-bold tracking-widest border ${cls}`}>
+      <motion.span animate={{ opacity: [1, 0.4, 1] }} transition={{ duration: 2, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full bg-current" />
       {status?.toUpperCase()}
-    </span>
+    </motion.span>
   );
 }
 
@@ -1097,8 +1212,9 @@ function NewCaseModal({ onClose, onSuccess }: any) {
     e.preventDefault();
     setLoading(true); setError("");
     try {
-      await api.createCase({ title, description });
-      onSuccess();
+      const created = await api.createCase({ title, description });
+      // Hand the created record back so the dashboard can scroll to it.
+      onSuccess(created);
     } catch (err: any) {
       setError(err.message || "Failed");
     } finally {
