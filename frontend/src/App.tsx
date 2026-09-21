@@ -37,16 +37,17 @@ function useBrandAsset(url: string) {
   return ready;
 }
 
-/** Logo: your icon.png when uploaded, else the built-in shield. */
-function BrandLogo({ size = 28, boxClass = "" }: { size?: number; boxClass?: string }) {
+/** Logo: your icon.png when uploaded, else the supplied fallback icon (ShieldAlert by default). */
+function BrandLogo({ size = 28, boxClass = "", iconFallback }: { size?: number; boxClass?: string; iconFallback?: React.ComponentType<{ className?: string }> }) {
   const hasIcon = useBrandAsset(BRAND_ICON_URL);
+  const Fallback = iconFallback ?? ShieldAlert;
   if (hasIcon) {
     return (
       <img src={BRAND_ICON_URL} alt="ANVESHAN logo" width={size} height={size}
         className={`rounded-lg object-contain shrink-0 ${boxClass}`} />
     );
   }
-  return <ShieldAlert size={size} className="text-cybergold shrink-0" />;
+  return <Fallback size={size} className="text-cybergold shrink-0" />;
 }
 
 /** Background layer: your bg.png when uploaded, else the default glow. */
@@ -140,9 +141,9 @@ function docIcon(docType: string) {
 
 const CLEARANCE_MAP: Record<string, { label: string; color: string; bg: string; border: string }> = {
   investigator: { label: "LEVEL 5 — TOP SECRET AUTHORISED", color: "text-cybergold", bg: "bg-cybergold/10", border: "border-cybergold/30" },
-  admin: { label: "LEVEL 6 — SYSTEM ADMINISTRATOR", color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/30" },
+  admin: { label: "LEVEL 6 — SYSTEM ADMINISTRATOR", color: "text-seal", bg: "bg-seal/10", border: "border-seal/30" },
   auditor: { label: "LEVEL 4 — AUDIT OBSERVER", color: "text-biometric", bg: "bg-biometric/10", border: "border-biometric/30" },
-  viewer: { label: "LEVEL 2 — READ ONLY", color: "text-slate-400", bg: "bg-slate-500/10", border: "border-slate-500/30" },
+  viewer: { label: "LEVEL 2 — READ ONLY", color: "text-[#4B5563]", bg: "bg-ink/5", border: "border-ink/20" },
 };
 
 // ── Root App ─────────────────────────────────────────────────────────
@@ -165,14 +166,18 @@ export default function App() {
   }
 
   if (!token) return <LoginView onLogin={handleLogin} />;
-  return <Dashboard role={role || "investigator"} onLogout={handleLogout} />;
+  return <Dashboard role={role || "investigator"} onLogout={handleLogout} onLogin={handleLogin} />;
 }
 
 // ── Login View ───────────────────────────────────────────────────────
+// Serious registry gate: grey steel lock-pad with a restrained brass ring
+// holds the uploaded icon (A-fingerprint). Clicking the icon dissolves the
+// pad and reveals the sign-in options. No neon, no game-like motion.
 function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"prototype" | "officer" | "viewer">("prototype");
+  const [unlocked, setUnlocked] = useState(false);
 
   // Officer (email + password + optional MFA) state
   const [email, setEmail] = useState("");
@@ -259,8 +264,8 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
   }
 
   /** Viewer login for an already-registered account — issues a fresh OTP. */
-  async function viewerRequestOtp(e: React.FormEvent) {
-    e.preventDefault();
+  async function viewerRequestOtp(e?: React.FormEvent) {
+    e?.preventDefault();
     setLoading("viewer");
     setError("");
     try {
@@ -293,60 +298,66 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
 
   const roles = ["investigator", "auditor", "admin", "viewer"];
 
+  // Grey registry gate. Before unlock: steel lock-pad with brass ring
+  // holding the icon. After unlock: the pad dissolves, options appear.
+  const [padGone, setPadGone] = useState(false);
+  const shellBg = unlocked
+    ? "bg-[#F4EFE4]"
+    : "bg-gradient-to-b from-[#6B7280] via-[#5B636E] to-[#4B5563]";
+  function unlockGate() {
+    if (unlocked) return;
+    setUnlocked(true);
+    setTimeout(() => setPadGone(true), 650);
+  }
+
   return (
-    <div className="min-h-screen bg-obsidian-900 flex relative overflow-hidden">
-      {/* Background: your bg.png when uploaded, else the default artwork */}
-      <AppBackground />
-      {/* Scanline effect */}
-      <div className="scan-line" />
-
-      {/* Ambient grid */}
-      <div className="absolute inset-0 opacity-20" style={{
-        backgroundImage: `linear-gradient(rgba(212,175,55,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(212,175,55,0.08) 1px, transparent 1px)`,
-        backgroundSize: "40px 40px",
-        transform: "perspective(1000px) rotateX(60deg) scale(2)",
-        transformOrigin: "top center",
-      }} />
-
-      {/* Left: Login Panel */}
-      <motion.div
-        initial={{ opacity: 0, x: -40 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.7, ease: [0.22, 0.75, 0.25, 1] }}
-        className="flex-1 flex items-center justify-center p-8 z-10"
-      >
-        <div className="max-w-md w-full">
-          <div className="flex items-center gap-4 mb-12">
-            <div className="w-14 h-14 rounded-xl bg-navy-900 border border-cybergold/30 flex items-center justify-center shadow-[0_0_20px_rgba(212,175,55,0.2)] overflow-hidden">
-              <BrandLogo size={32} />
+    <div className={`min-h-screen ${shellBg} flex items-center justify-center relative overflow-hidden transition-colors duration-700`}>
+      {/* Steel lock-pad gate — click the icon to dissolve */}
+      {!padGone && (
+        <motion.div
+          initial={{ opacity: 1 }}
+          animate={{ opacity: unlocked ? 0 : 1, scale: unlocked ? 1.08 : 1 }}
+          transition={{ duration: 0.6, ease: [0.22, 0.75, 0.25, 1] }}
+          className="absolute inset-0 flex items-center justify-center z-20"
+        >
+          <div role="button" tabIndex={0} aria-label="Authenticate" onClick={unlockGate} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); unlockGate(); } }} className="relative flex flex-col items-center cursor-pointer">
+            {/* Grey steel pad */}
+            <div className="relative flex items-center justify-center w-56 h-56 rounded-full bg-gradient-to-b from-[#5B636E] to-[#4B5563] border-[6px] border-[#CBD5E1]">
+              {/* Glowing brass seal ring */}
+              <div className="absolute -inset-2 rounded-full border-2 border-[#C9A36C] shadow-[0_0_22px_rgba(154,123,46,0.45)]" />
+              {/* Centered icon (fingerprint fallback via BrandLogo) */}
+              <div className="relative flex items-center justify-center w-28 h-28 rounded-2xl bg-[#F4EFE4] border border-[#D8CFB8] overflow-hidden">
+                <BrandLogo size={64} iconFallback={Fingerprint} />
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white font-mono tracking-[0.2em]">ANVESHAN</h1>
-              <p className="text-[10px] text-slate-500 tracking-[0.15em] font-mono mt-0.5">SECURE EVIDENCE INTELLIGENCE</p>
-            </div>
+            <h1 className="mt-6 text-xl font-bold font-serif tracking-[0.3em] text-[#F4EFE4]">ANVESHAN</h1>
+            <p className="mt-2 text-[9px] font-mono tracking-widest text-[#D8CFB8] uppercase">CLICK TO AUTHENTICATE</p>
           </div>
-
-          <h2 className="text-4xl font-bold text-white leading-[1.1] mb-4">
-            Access the<br />
-            <span className="text-cybergold">Evidence Vault</span>
-          </h2>
-          <p className="text-slate-400 text-sm mb-10 max-w-sm leading-relaxed">
-            Authenticate with your assigned clearance level. All sessions are encrypted and monitored.
-          </p>
-
-          {/* Authentication mode selector */}
+        </motion.div>
+      )}
+      {/* Options panel — revealed once the pad has dissolved */}
+      {padGone && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, ease: [0.22, 0.75, 0.25, 1] }}
+          className="w-full max-w-md mx-auto p-8"
+        >
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <BrandLogo size={36} />
+            <h1 className="text-2xl font-bold font-serif text-[#1B2A4A] tracking-wide">ANVESHAN</h1>
+          </div>
+          <h2 className="text-2xl font-bold text-center text-[#1B2A4A] mb-2 font-serif">Evidence Registry</h2>
+          <p className="text-center text-[#6B7280] text-sm mb-8">Sign in with your assigned clearance level.</p>
+          {/* Mode selector */}
           <div className="flex gap-2 mb-6">
             {([["prototype", "ROLE ACCESS"], ["officer", "OFFICER LOGIN"], ["viewer", "PUBLIC VIEWER"]] as [typeof mode, string][]).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => { setMode(key); setError(""); setChallengeToken(null); }}
-                className={`flex-1 h-9 rounded-lg font-mono text-[9px] font-bold tracking-widest transition-all ${mode === key ? "bg-white text-obsidian-900" : "bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"}`}
-              >
+              <button key={key} onClick={() => { setMode(key); setError(""); setChallengeToken(null); }}
+                className={`flex-1 h-9 rounded-lg font-mono text-[9px] font-bold tracking-widest transition-all ${mode === key ? "bg-[#24407A] text-white" : "bg-[#E5E0D8] text-[#4A4A4A] border border-[#D8CFB8] hover:bg-[#CBD5E1]"}`}>
                 {label}
               </button>
             ))}
           </div>
-
           {mode === "prototype" && (
             <div className="space-y-3">
               {roles.map((r, i) => (
@@ -357,163 +368,100 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
                   transition={{ delay: 0.1 + i * 0.1 }}
                   onClick={() => doLogin(r)}
                   disabled={loading !== null}
-                  className={`w-full h-14 rounded-xl border font-mono text-sm tracking-widest font-bold flex items-center px-5 gap-4 transition-all duration-300 disabled:opacity-40 group
-                    ${r === "investigator" ? "bg-cybergold/10 border-cybergold/40 text-cybergold hover:bg-cybergold hover:text-obsidian-900" :
-                      r === "admin" ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white" :
-                        r === "auditor" ? "bg-biometric/10 border-biometric/30 text-biometric hover:bg-biometric hover:text-obsidian-900" :
-                          "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
-                    }`}
-                >
-                  <Fingerprint size={18} className="group-hover:animate-pulse" />
-                  {loading === r ? "AUTHENTICATING..." : r.toUpperCase()}
+                  className={`w-full h-12 rounded-xl border font-mono text-sm tracking-widest font-bold flex items-center justify-center gap-3 transition-all duration-200 disabled:opacity-50 ${r === "investigator" ? "bg-[#24407A]/10 border-[#24407A]/30 text-[#24407A] hover:bg-[#24407A] hover:text-white" : r === "admin" ? "bg-[#7A1F2B]/10 border-[#7A1F2B]/30 text-[#7A1F2B] hover:bg-[#7A1F2B] hover:text-white" : r === "auditor" ? "bg-[#1E6B4A]/10 border-[#1E6B4A]/30 text-[#1E6B4A] hover:bg-[#1E6B4A] hover:text-white" : "bg-[#4A4A4A]/5 border-[#4A4A4A]/20 text-[#4A4A4A] hover:bg-[#4A4A4A]/10"}`}>
+                  <Fingerprint size={18} />
+                  {loading === r ? 'AUTHENTICATING...' : r.toUpperCase()}
                 </motion.button>
               ))}
             </div>
           )}
-
-          {/* Officer credentials login — email + password (+ TOTP second factor) */}
+          {/* Officer credentials login — email + password (+ TOTP) */}
           {mode === "officer" && (
             challengeToken ? (
               <form onSubmit={officerVerifyMfa} className="space-y-3">
-                <div className="p-3 rounded-xl bg-biometric/10 border border-biometric/20 text-biometric text-[10px] font-mono flex items-center gap-2">
+                <div className="p-3 rounded-xl bg-[#24407A]/10 border border-[#24407A]/20 text-[#24407A] text-[10px] font-mono flex items-center gap-2">
                   <KeyRound size={12} /> MFA CHALLENGE — ENTER THE 6-DIGIT AUTHENTICATOR CODE
                 </div>
-                <input
-                  value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  inputMode="numeric"
-                  autoFocus
-                  placeholder="000000"
-                  className="w-full h-14 px-5 bg-obsidian-800/60 border border-white/10 rounded-xl text-center text-2xl tracking-[0.5em] font-mono text-white placeholder:text-slate-700 focus:outline-none focus:border-biometric/50 focus:ring-1 focus:ring-biometric/30 transition-all"
-                />
-                <button type="submit" disabled={loading === "mfa" || mfaCode.length !== 6} className="w-full h-12 bg-white text-obsidian-900 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 transition-all">
+                <input value={mfaCode} onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoFocus placeholder="000000"
+                  className="w-full h-14 px-5 border border-[#D8CFB8] rounded-xl text-center text-2xl tracking-[0.5em] font-mono text-[#1B2A4A] focus:outline-none focus:border-[#24407A] transition-all" />
+                <button type="submit" disabled={loading === "mfa" || mfaCode.length !== 6} className="w-full h-12 bg-[#24407A] text-white rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-50">
                   {loading === "mfa" ? "VERIFYING..." : "VERIFY & ENTER"}
                 </button>
-                <button type="button" onClick={() => { setChallengeToken(null); setMfaCode(""); setError(""); }} className="w-full h-10 text-slate-500 hover:text-slate-300 font-mono text-[10px] tracking-widest transition-colors">
-                  ← BACK
-                </button>
+                <button type="button" onClick={() => { setChallengeToken(null); setMfaCode(""); setError(""); }} className="w-full h-10 text-[#6B7280] hover:text-[#24407A] font-mono text-[10px] tracking-widest">← BACK</button>
               </form>
             ) : (
               <form onSubmit={officerLogin} className="space-y-3">
                 <div className="relative">
-                  <Mail size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    placeholder="officer@agency.gov.in"
-                    className="w-full h-12 pl-11 pr-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all"
-                  />
+                  <Mail size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6B7280]" />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="officer@registry.gov.in"
+                    className="w-full h-12 pl-11 pr-4 border border-[#D8CFB8] rounded-xl text-sm font-mono text-[#1B2A4A] placeholder-[#9CA3AF] focus:outline-none focus:border-[#24407A] transition-all" />
                 </div>
                 <div className="relative">
-                  <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    placeholder="••••••••••••"
-                    className="w-full h-12 pl-11 pr-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all"
-                  />
+                  <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6B7280]" />
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••••••"
+                    className="w-full h-12 pl-11 pr-4 border border-[#D8CFB8] rounded-xl text-sm font-mono text-[#1B2A4A] placeholder-[#9CA3AF] focus:outline-none focus:border-[#24407A] transition-all" />
                 </div>
-                <button type="submit" disabled={loading === "officer"} className="w-full h-12 bg-cybergold text-obsidian-900 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 hover:shadow-[0_0_20px_rgba(212,175,55,0.3)] transition-all flex items-center justify-center gap-2">
+                <button type="submit" disabled={loading === "officer"} className="w-full h-12 bg-[#24407A] text-white rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-50 flex items-center justify-center gap-2">
                   {loading === "officer" ? "AUTHENTICATING..." : <><ArrowRight size={14} /> CONTINUE</>}
                 </button>
               </form>
             )
           )}
-
           {/* Public viewer — self-registration with email OTP verification */}
           {mode === "viewer" && (
             viewerStage === "verify" ? (
               <form onSubmit={viewerVerify} className="space-y-3">
-                <div className="p-3 rounded-xl bg-cybergold/10 border border-cybergold/20 text-cybergold text-[10px] font-mono leading-relaxed">
-                  A 6-digit code was sent to <span className="text-white">{viewerEmail}</span>.
-                  {devCode ? <span className="block mt-1 text-slate-400">DEV CODE: <span className="text-biometric tracking-widest">{devCode}</span></span> : null}
+                <div className="p-3 rounded-xl bg-[#CAB879]/10 border border-[#CAB879]/20 text-[#24407A] text-[10px] font-mono leading-relaxed">
+                  A 6-digit code was sent to <span className="text-[#1B2A4A]">{viewerEmail}</span>.
+                  {devCode ? <span className="block mt-1 text-[#6B7280]">DEV CODE: <span className="text-[#24407A] tracking-widest">{devCode}</span></span> : null}
                 </div>
-                <input
-                  value={viewerCode}
-                  onChange={(e) => setViewerCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  inputMode="numeric"
-                  autoFocus
-                  placeholder="000000"
-                  className="w-full h-14 px-5 bg-obsidian-800/60 border border-white/10 rounded-xl text-center text-2xl tracking-[0.5em] font-mono text-white placeholder:text-slate-700 focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all"
-                />
-                <button type="submit" disabled={loading === "viewer" || viewerCode.length !== 6} className="w-full h-12 bg-white text-obsidian-900 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 transition-all">
-                  {loading === "viewer" ? "VERIFYING..." : "VERIFY & ENTER VAULT"}
+                <input value={viewerCode} onChange={(e) => setViewerCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoFocus placeholder="000000"
+                  className="w-full h-14 px-5 border border-[#D8CFB8] rounded-xl text-center text-2xl tracking-[0.5em] font-mono text-[#1B2A4A] focus:outline-none focus:border-[#24407A] transition-all" />
+                <button type="submit" disabled={loading === "viewer"} className="w-full h-12 bg-[#CAB879] text-[#1B2A4A] rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-50">
+                  {loading === "viewer" ? "AUTHENTICATING..." : "VERIFY & ENTER"}
                 </button>
-                <button type="button" onClick={() => { setViewerStage("register"); setViewerCode(""); setError(""); }} className="w-full h-10 text-slate-500 hover:text-slate-300 font-mono text-[10px] tracking-widest transition-colors">
-                  ← USE A DIFFERENT EMAIL
-                </button>
+                <button type="button" onClick={() => { setViewerStage("register"); setViewerCode(""); setError(""); }} className="w-full h-10 text-[#6B7280] hover:text-[#24407A] font-mono text-[10px] tracking-widest">← BACK</button>
               </form>
             ) : (
-              <div className="space-y-5">
-                <form onSubmit={viewerRegister} className="space-y-3">
-                  <div className="text-[10px] font-mono text-slate-500 tracking-widest">NEW VIEWER — REGISTER</div>
-                  <input value={viewerName} onChange={(e) => setViewerName(e.target.value)} required placeholder="Full name" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
-                  <input type="email" value={viewerEmail} onChange={(e) => setViewerEmail(e.target.value)} required placeholder="viewer@example.com" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
-                  <input type="password" value={viewerPassword} onChange={(e) => setViewerPassword(e.target.value)} required minLength={8} placeholder="Password (min 8 characters)" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
-                  <button type="submit" disabled={loading === "viewer"} className="w-full h-12 bg-white text-obsidian-900 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 transition-all">
-                    {loading === "viewer" ? "REGISTERING..." : "REGISTER & SEND CODE"}
-                  </button>
-                </form>
-                <div className="flex items-center gap-3 text-[9px] font-mono text-slate-600">
-                  <div className="flex-1 h-px bg-white/10" />OR<div className="flex-1 h-px bg-white/10" />
+              <form onSubmit={viewerRegister} className="space-y-3">
+                <div className="relative">
+                  <Mail size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6B7280]" />
+                  <input type="email" value={viewerEmail} onChange={(e) => setViewerEmail(e.target.value)} required placeholder="viewer@registry.gov.in"
+                    className="w-full h-12 pl-11 pr-4 border border-[#D8CFB8] rounded-xl text-sm font-mono text-[#1B2A4A] placeholder-[#9CA3AF] focus:outline-none focus:border-[#24407A] transition-all" />
                 </div>
-                <form onSubmit={viewerRequestOtp} className="space-y-3">
-                  <div className="text-[10px] font-mono text-slate-500 tracking-widest">EXISTING VIEWER — EMAIL ME A CODE</div>
-                  <input type="email" value={viewerEmail} onChange={(e) => setViewerEmail(e.target.value)} required placeholder="viewer@example.com" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
-                  <input type="password" value={viewerPassword} onChange={(e) => setViewerPassword(e.target.value)} required placeholder="Password" className="w-full h-12 px-4 bg-obsidian-800/60 border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 transition-all" />
-                  <button type="submit" disabled={loading === "viewer"} className="w-full h-11 border border-white/15 text-slate-300 rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-40 hover:bg-white/5 transition-all">
-                    SEND VERIFICATION CODE
-                  </button>
-                </form>
-              </div>
+                <input type="text" value={viewerName} onChange={(e) => setViewerName(e.target.value)} required placeholder="Full name for the record"
+                  className="w-full h-12 px-4 border border-[#D8CFB8] rounded-xl text-sm font-mono text-[#1B2A4A] placeholder-[#9CA3AF] focus:outline-none focus:border-[#24407A] transition-all" />
+                <div className="relative">
+                  <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6B7280]" />
+                  <input type="password" value={viewerPassword} onChange={(e) => setViewerPassword(e.target.value)} required placeholder="Password"
+                    className="w-full h-12 pl-11 pr-4 border border-[#D8CFB8] rounded-xl text-sm font-mono text-[#1B2A4A] placeholder-[#9CA3AF] focus:outline-none focus:border-[#24407A] transition-all" />
+                </div>
+                <button type="submit" disabled={loading === "viewer"} className="w-full h-12 bg-[#CAB879] text-[#1B2A4A] rounded-xl font-mono text-xs font-bold tracking-widest disabled:opacity-50 flex items-center justify-center gap-2">
+                  {loading === "viewer" ? "SENDING..." : <><ArrowRight size={14} /> REGISTER &amp; SEND CODE</>}
+                </button>
+                <button type="button" onClick={() => viewerRequestOtp()} disabled={loading === "viewer"} className="w-full h-10 text-[#6B7280] hover:text-[#24407A] font-mono text-[10px] tracking-widest disabled:opacity-50">ALREADY REGISTERED — SEND CODE</button>
+              </form>
             )
           )}
 
           {error && (
-            <motion.div {...fadeSlideUp} className="mt-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm font-mono">
+            <motion.div {...fadeSlideUp} className="mt-6 p-4 bg-[#7A1F2B]/10 border border-[#7A1F2B]/30 rounded-xl text-[#7A1F2B] text-sm font-mono">
               {error}
             </motion.div>
           )}
 
-          <div className="mt-10 flex items-center gap-3 text-[10px] text-slate-600 font-mono">
+          <div className="mt-10 flex items-center justify-center gap-3 text-[10px] text-[#6B7280] font-mono">
             <Lock size={12} />
             <span>AES-256 · JWT · MFA ACTIVE · SESSION ENCRYPTED</span>
           </div>
-        </div>
-      </motion.div>
-
-      {/* Right: Decorative panel */}
-      <div className="hidden lg:flex flex-1 items-center justify-center border-l border-white/5 relative">
-        <div className="absolute inset-0 bg-gradient-to-br from-obsidian-800 to-obsidian-900" />
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.5, duration: 1 }}
-          className="relative z-10 text-center px-12"
-        >
-          <div className="w-24 h-24 rounded-2xl bg-cybergold/10 border border-cybergold/20 flex items-center justify-center mx-auto mb-8 shadow-[0_0_40px_rgba(212,175,55,0.15)]">
-            <Shield size={48} className="text-cybergold" />
-          </div>
-          <h3 className="text-3xl font-bold text-white font-mono tracking-widest mb-4">CLASSIFIED</h3>
-          <p className="text-slate-500 text-sm max-w-xs mx-auto leading-relaxed">
-            Tamper-proof chain of custody. Hash-verified integrity. Role-based access control.
-          </p>
-          <div className="mt-8 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-biometric/10 border border-biometric/20">
-            <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} className="w-2 h-2 rounded-full bg-biometric shadow-[0_0_8px_rgba(0,240,255,0.8)]" />
-            <span className="text-biometric text-[10px] font-mono tracking-widest">SYSTEM ONLINE</span>
-          </div>
         </motion.div>
-      </div>
+      )}
     </div>
   );
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────
-function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
+function Dashboard({ role, onLogout, onLogin }: { role: string; onLogout: () => void; onLogin: (t: string, r: string) => void }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString("en-GB", { hour12: false }));
   const [activeView, setActiveView] = useState<ActiveView>("overview");
@@ -537,15 +485,18 @@ function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
 
   function loadCases() {
     setLoadingCases(true);
-    api.listCases().then((data: CaseItem[]) => setCases(data)).catch(() => { }).finally(() => setLoadingCases(false));
+    api.listCases()
+      // Guard the shape: a proxy/error payload must not break the case lists.
+      .then((data: CaseItem[]) => setCases(Array.isArray(data) ? data : []))
+      .catch(() => { })
+      .finally(() => setLoadingCases(false));
   }
 
   function quickPrototypeLogin(demoRole: "investigator" | "auditor" | "admin") {
     api.prototypeLogin(demoRole, demoRole).then((res: any) => {
       localStorage.setItem("anveshan_token", res.access_token);
       localStorage.setItem("anveshan_role", res.role);
-      setToken(res.access_token);
-      setRole(res.role);
+      onLogin(res.access_token, res.role);
       setCurrentUser(res.user || null);
       notify("Signed in as demo " + res.role);
     }).catch((err: Error) => notify(err.message || "Prototype login failed"));
@@ -623,7 +574,7 @@ function Dashboard({ role, onLogout }: { role: string; onLogout: () => void }) {
 // ── Dashboard Shell (sidebar + topbar wrapper) ───────────────────────
 function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeView, setActiveView, clearance, currentTime, currentUser, onLogout, role }: any) {
   return (
-    <div className="min-h-screen bg-obsidian-900 text-slate-200 flex font-sans overflow-hidden relative">
+    <div className="min-h-screen bg-obsidian-900 text-ink flex font-sans overflow-hidden relative">
       {/* Background: your bg.png when uploaded, else the default glow */}
       <AppBackground />
 
@@ -632,13 +583,13 @@ function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeV
         initial={false}
         animate={{ width: sidebarOpen ? 260 : 80 }}
         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className="glass-panel z-20 border-r border-white/5 flex flex-col shrink-0"
+        className="glass-panel z-20 border-r border-fileline flex flex-col shrink-0"
       >
-        <div className="h-20 flex items-center px-6 border-b border-white/5 gap-4">
+        <div className="h-20 flex items-center px-6 border-b border-fileline gap-4">
           <BrandLogo size={28} />
           <AnimatePresence>
             {sidebarOpen && (
-              <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="font-mono font-bold tracking-[0.15em] text-white whitespace-nowrap text-sm">
+              <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="font-mono font-bold tracking-[0.15em] text-ink whitespace-nowrap text-sm">
                 ANVESHAN
               </motion.div>
             )}
@@ -651,23 +602,23 @@ function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeV
           <NavItem icon={Database} label="Evidence Vault" active={activeView === "vault"} isOpen={sidebarOpen} onClick={() => setActiveView("vault")} />
           <NavItem icon={Building2} label="Departments" active={activeView === "departments"} isOpen={sidebarOpen} onClick={() => setActiveView("departments")} />
           <NavItem icon={FileText} label="Audit Logs" active={activeView === "auditlogs"} isOpen={sidebarOpen} onClick={() => setActiveView("auditlogs")} />
-          <NavItem icon={Shield} label="Clearance" active={activeView === "clearance"} isOpen={sidebarOpen} onClick={() => setActiveView("clearance")} />
+          {role !== "viewer" && <NavItem icon={Shield} label="Clearance" active={activeView === "clearance"} isOpen={sidebarOpen} onClick={() => setActiveView("clearance")} />}
           <NavItem icon={Settings} label="Settings" active={activeView === "settings"} isOpen={sidebarOpen} onClick={() => setActiveView("settings")} />
         </nav>
 
-        <div className="px-4 pb-4 border-t border-white/5 pt-4">
+        <div className="px-4 pb-4 border-t border-fileline pt-4">
           {sidebarOpen && (
             <div className="flex items-center gap-3 mb-4 px-2">
               <div className="w-8 h-8 rounded-lg bg-cybergold/10 border border-cybergold/20 flex items-center justify-center text-cybergold text-xs font-bold font-mono">
                 {(currentUser?.full_name || "US").slice(0, 2).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-bold text-white truncate">{currentUser?.full_name || "Operator"}</div>
-                <div className="text-[10px] text-slate-500 font-mono">{role?.toUpperCase()}</div>
+                <div className="text-xs font-bold text-ink truncate">{currentUser?.full_name || "Operator"}</div>
+                <div className="text-[10px] text-[#6B7280] font-mono">{role?.toUpperCase()}</div>
               </div>
             </div>
           )}
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-full flex items-center justify-center h-10 rounded-lg hover:bg-white/5 text-slate-500 hover:text-white transition-colors">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-full flex items-center justify-center h-10 rounded-lg hover:bg-ink/5 text-[#6B7280] hover:text-ink transition-colors">
             {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
           </button>
         </div>
@@ -676,23 +627,23 @@ function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeV
       {/* Main Content */}
       <main className="flex-1 flex flex-col z-10 h-screen overflow-hidden">
         {/* Security Hero Banner */}
-        <header className="h-16 glass-panel border-b border-white/5 px-8 flex items-center justify-between shrink-0">
+        <header className="h-16 glass-panel border-b border-fileline px-8 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-6">
             <div className={`px-3 py-1 rounded-full ${clearance.bg} border ${clearance.border} flex items-center gap-2`}>
               <ShieldCheck size={14} className={clearance.color} />
               <span className={`text-[10px] font-mono font-bold ${clearance.color} tracking-widest`}>{clearance.label}</span>
             </div>
             <div className="flex items-center gap-2">
-              <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full bg-biometric shadow-[0_0_6px_rgba(0,240,255,0.8)]" />
+              <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full bg-biometric shadow-[0_0_6px_rgba(36,64,122,0.45)]" />
               <span className="text-[10px] font-mono text-biometric/70 tracking-widest">ENCRYPTED</span>
             </div>
           </div>
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 text-slate-500 font-mono text-sm">
+            <div className="flex items-center gap-2 text-[#6B7280] font-mono text-sm">
               <Clock size={14} />
               <span className="tracking-wider tabular-nums">{currentTime}</span>
             </div>
-            <button onClick={onLogout} className="text-[10px] font-bold text-slate-600 hover:text-red-400 transition-colors tracking-widest font-mono">
+            <button onClick={onLogout} className="text-[10px] font-bold text-[#6B7280] hover:text-seal transition-colors tracking-widest font-mono">
               TERMINATE
             </button>
           </div>
@@ -711,13 +662,13 @@ function DashboardShell({ children, banner, sidebarOpen, setSidebarOpen, activeV
 // ── NavItem ──────────────────────────────────────────────────────────
 function NavItem({ icon: Icon, label, active, isOpen, onClick }: any) {
   return (
-    <button onClick={onClick} className={`w-full flex items-center h-11 rounded-xl transition-all duration-200 group ${active ? "bg-cybergold/10 border border-cybergold/20" : "hover:bg-white/5 border border-transparent"}`}>
-      <div className={`w-11 h-11 shrink-0 flex items-center justify-center ${active ? "text-cybergold" : "text-slate-500 group-hover:text-slate-200"}`}>
+    <button onClick={onClick} className={`w-full flex items-center h-11 rounded-xl transition-all duration-200 group ${active ? "bg-cybergold/10 border border-cybergold/20" : "hover:bg-ink/5 border border-transparent"}`}>
+      <div className={`w-11 h-11 shrink-0 flex items-center justify-center ${active ? "text-cybergold" : "text-[#6B7280] group-hover:text-ink"}`}>
         <Icon size={18} />
       </div>
       <AnimatePresence>
         {isOpen && (
-          <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={{ opacity: 0, width: 0 }} className={`text-xs font-mono tracking-wide whitespace-nowrap overflow-hidden ${active ? "text-white font-bold" : "text-slate-400 group-hover:text-slate-200"}`}>
+          <motion.span initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={{ opacity: 0, width: 0 }} className={`text-xs font-mono tracking-wide whitespace-nowrap overflow-hidden ${active ? "text-registry font-bold" : "text-[#6B7280] group-hover:text-ink"}`}>
             {label}
           </motion.span>
         )}
@@ -736,11 +687,11 @@ function OverviewView({ cases, activeCases, role, loadingCases, onOpenCase, onCr
       <motion.div variants={staggerItem} className="flex items-end justify-between">
         <div>
           <div className="text-[10px] font-mono font-bold text-cybergold tracking-[0.2em] mb-2">COMMAND CENTER</div>
-          <h1 className="text-3xl font-bold text-white font-mono tracking-wide">Secure Dashboard</h1>
-          <p className="text-slate-400 text-sm mt-1">Your classified workspace. All actions are logged.</p>
+          <h1 className="text-3xl font-bold text-ink font-mono tracking-wide">Secure Dashboard</h1>
+          <p className="text-[#6B7280] text-sm mt-1">Your classified workspace. All actions are logged.</p>
         </div>
         {canCreate && (
-          <button onClick={onCreateCase} className="h-11 px-5 bg-white text-obsidian-900 font-bold font-mono text-xs tracking-widest rounded-xl flex items-center gap-2 hover:shadow-[0_0_20px_rgba(255,255,255,0.2)] transition-all hover:-translate-y-0.5">
+          <button onClick={onCreateCase} className="h-11 px-5 bg-registry text-paper font-bold font-mono text-xs tracking-widest rounded-xl flex items-center gap-2 hover:shadow-[0_0_20px_rgba(36,64,122,0.25)] transition-all hover:-translate-y-0.5">
             <Plus size={16} /> NEW CASE
           </button>
         )}
@@ -756,19 +707,19 @@ function OverviewView({ cases, activeCases, role, loadingCases, onOpenCase, onCr
 
       {/* Recent Cases */}
       <motion.div variants={staggerItem} className="glass-panel rounded-2xl overflow-hidden">
-        <div className="px-6 py-5 border-b border-white/5 flex items-center justify-between">
-          <h2 className="text-sm font-mono font-bold text-white tracking-widest">RECENT CASE FILES</h2>
-          <span className="text-[10px] font-mono text-slate-500 tracking-wider">{cases.length} RECORDS</span>
+        <div className="px-6 py-5 border-b border-fileline flex items-center justify-between">
+          <h2 className="text-sm font-mono font-bold text-ink tracking-widest">RECENT CASE FILES</h2>
+          <span className="text-[10px] font-mono text-[#6B7280] tracking-wider">{cases.length} RECORDS</span>
         </div>
         {loadingCases ? (
-          <div className="py-16 text-center text-slate-500 text-sm font-mono">LOADING RECORDS...</div>
+          <div className="py-16 text-center text-[#6B7280] text-sm font-mono">LOADING RECORDS...</div>
         ) : cases.length === 0 ? (
           <div className="py-16 text-center">
-            <FolderOpen size={40} className="text-slate-700 mx-auto mb-4" />
-            <p className="text-slate-500 text-sm font-mono">NO CASE FILES FOUND</p>
+            <FolderOpen size={40} className="text-[#B9AE93] mx-auto mb-4" />
+            <p className="text-[#6B7280] text-sm font-mono">NO CASE FILES FOUND</p>
           </div>
         ) : (
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-fileline">
             {cases.slice(0, 8).map((c: CaseItem, i: number) => (
               <motion.div
                 key={c.id}
@@ -776,14 +727,14 @@ function OverviewView({ cases, activeCases, role, loadingCases, onOpenCase, onCr
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.1 * i }}
                 onClick={() => onOpenCase(c)}
-                className="flex items-center gap-5 px-6 py-4 hover:bg-white/[0.02] cursor-pointer transition-all group"
+                className="flex items-center gap-5 px-6 py-4 hover:bg-ink/[0.03] cursor-pointer transition-all group"
               >
-                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-cybergold transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-obsidian-700 flex items-center justify-center text-[#6B7280] group-hover:text-cybergold transition-colors">
                   <FolderOpen size={18} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-white group-hover:text-cybergold transition-colors">{c.title}</div>
-                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">{c.case_number} · {formatDate(c.created_at)}</div>
+                  <div className="text-sm font-bold text-ink group-hover:text-cybergold transition-colors">{c.title}</div>
+                  <div className="text-[11px] text-[#6B7280] font-mono mt-0.5">{c.case_number} · {formatDate(c.created_at)}</div>
                 </div>
                 <StatusPill status={c.status} />
               </motion.div>
@@ -806,10 +757,10 @@ function CasesListView({ cases, role, loading, onOpenCase, onCreateCase }: any) 
       <motion.div variants={staggerItem} className="flex items-end justify-between">
         <div>
           <div className="text-[10px] font-mono font-bold text-cybergold tracking-[0.2em] mb-2">EVIDENCE VAULT</div>
-          <h1 className="text-3xl font-bold text-white font-mono tracking-wide">Case Files</h1>
+          <h1 className="text-3xl font-bold text-ink font-mono tracking-wide">Case Files</h1>
         </div>
         {canCreate && (
-          <button onClick={onCreateCase} className="h-11 px-5 bg-white text-obsidian-900 font-bold font-mono text-xs tracking-widest rounded-xl flex items-center gap-2 hover:shadow-[0_0_20px_rgba(255,255,255,0.2)] transition-all hover:-translate-y-0.5">
+          <button onClick={onCreateCase} className="h-11 px-5 bg-registry text-paper font-bold font-mono text-xs tracking-widest rounded-xl flex items-center gap-2 hover:shadow-[0_0_20px_rgba(36,64,122,0.25)] transition-all hover:-translate-y-0.5">
             <Plus size={16} /> NEW CASE
           </button>
         )}
@@ -817,18 +768,18 @@ function CasesListView({ cases, role, loading, onOpenCase, onCreateCase }: any) 
 
       <motion.div variants={staggerItem}>
         <div className="relative mb-6">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Query database..." className="w-full h-12 pl-11 pr-4 bg-obsidian-800/60 backdrop-blur-xl border border-white/10 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all" />
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6B7280]" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Query database..." className="w-full h-12 pl-11 pr-4 bg-obsidian-800/60 backdrop-blur-xl border border-fileline rounded-xl text-sm font-mono text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all" />
         </div>
       </motion.div>
 
       <motion.div variants={staggerItem} className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         {loading ? (
-          <div className="col-span-full py-16 text-center text-slate-500 font-mono text-sm">LOADING...</div>
+          <div className="col-span-full py-16 text-center text-[#6B7280] font-mono text-sm">LOADING...</div>
         ) : filtered.length === 0 ? (
           <div className="col-span-full py-16 text-center">
-            <FolderOpen size={40} className="text-slate-700 mx-auto mb-4" />
-            <p className="text-slate-500 font-mono text-sm">NO MATCHING RECORDS</p>
+            <FolderOpen size={40} className="text-[#B9AE93] mx-auto mb-4" />
+            <p className="text-[#6B7280] font-mono text-sm">NO MATCHING RECORDS</p>
           </div>
         ) : filtered.map((c: CaseItem) => (
           <CaseCard key={c.id} caseItem={c} onClick={() => onOpenCase(c)} />
@@ -845,15 +796,15 @@ function CaseCard({ caseItem, onClick }: { caseItem: CaseItem; onClick: () => vo
       whileHover={{ y: -4, scale: 1.01 }}
       transition={{ type: "spring", stiffness: 400, damping: 25 }}
       onClick={onClick}
-      className="glass-panel rounded-xl p-6 border border-white/5 cursor-pointer group hover:border-cybergold/40 hover:shadow-[0_0_20px_rgba(212,175,55,0.1)] transition-all duration-300"
+      className="glass-panel rounded-xl p-6 border border-fileline cursor-pointer group hover:border-cybergold/40 hover:shadow-[0_0_20px_rgba(154,123,46,0.15)] transition-all duration-300"
     >
       <div className="flex items-start justify-between mb-4">
-        <div className="text-[10px] font-mono text-slate-500 tracking-widest">{caseItem.case_number}</div>
+        <div className="text-[10px] font-mono text-[#6B7280] tracking-widest">{caseItem.case_number}</div>
         <StatusPill status={caseItem.status} />
       </div>
-      <h3 className="text-lg font-bold text-white group-hover:text-cybergold transition-colors mb-2 leading-tight">{caseItem.title}</h3>
-      {caseItem.description && <p className="text-xs text-slate-500 line-clamp-2 mb-4">{caseItem.description}</p>}
-      <div className="pt-4 border-t border-white/5 text-[10px] font-mono text-slate-600 tracking-wider">
+      <h3 className="text-lg font-bold text-ink group-hover:text-cybergold transition-colors mb-2 leading-tight">{caseItem.title}</h3>
+      {caseItem.description && <p className="text-xs text-[#6B7280] line-clamp-2 mb-4">{caseItem.description}</p>}
+      <div className="pt-4 border-t border-fileline text-[10px] font-mono text-[#6B7280] tracking-wider">
         FILED {formatDate(caseItem.created_at)}
       </div>
     </motion.div>
@@ -911,7 +862,7 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
   return (
     <motion.div {...fadeSlideUp} className="max-w-6xl mx-auto p-8 space-y-6">
       {/* Back */}
-      <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-cybergold text-xs font-mono font-bold tracking-widest transition-colors">
+      <button onClick={onBack} className="flex items-center gap-2 text-[#6B7280] hover:text-cybergold text-xs font-mono font-bold tracking-widest transition-colors">
         <ArrowLeft size={14} /> ALL CASES
       </button>
 
@@ -919,19 +870,19 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
       <div className="glass-panel rounded-2xl p-8 flex items-start justify-between">
         <div>
           <div className="text-[10px] font-mono text-cybergold tracking-[0.2em] mb-2">{caseItem.case_number}</div>
-          <h1 className="text-3xl font-bold text-white font-mono tracking-wide mb-3">{caseItem.title}</h1>
+          <h1 className="text-3xl font-bold text-ink font-mono tracking-wide mb-3">{caseItem.title}</h1>
           <div className="flex gap-3">
             <StatusPill status={caseItem.status} />
-            <span className="text-[10px] font-mono text-slate-500 tracking-wider flex items-center gap-1"><ClipboardList size={12} /> {docs.length} DOCUMENTS</span>
+            <span className="text-[10px] font-mono text-[#6B7280] tracking-wider flex items-center gap-1"><ClipboardList size={12} /> {docs.length} DOCUMENTS</span>
           </div>
-          {caseItem.description && <p className="text-sm text-slate-400 mt-4 max-w-lg">{caseItem.description}</p>}
+          {caseItem.description && <p className="text-sm text-[#6B7280] mt-4 max-w-lg">{caseItem.description}</p>}
         </div>
         {canWrite && (
           <div className="flex gap-3">
-            <button onClick={() => setModal("edit")} className="h-10 px-4 border border-white/10 rounded-xl text-xs font-mono font-bold text-slate-300 hover:bg-white/5 hover:border-white/20 transition-all flex items-center gap-2">
+            <button onClick={() => setModal("edit")} className="h-10 px-4 border border-fileline rounded-xl text-xs font-mono font-bold text-ink hover:bg-ink/5 hover:border-ink/20 transition-all flex items-center gap-2">
               <Settings2 size={14} /> EDIT
             </button>
-            <button onClick={() => setModal("upload")} className="h-10 px-4 bg-white text-obsidian-900 rounded-xl text-xs font-mono font-bold flex items-center gap-2 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] transition-all">
+            <button onClick={() => setModal("upload")} className="h-10 px-4 bg-registry text-paper rounded-xl text-xs font-mono font-bold flex items-center gap-2 hover:shadow-[0_0_15px_rgba(36,64,122,0.25)] transition-all">
               <Upload size={14} /> ADD EVIDENCE
             </button>
           </div>
@@ -940,11 +891,11 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
 
       {/* Tabs */}
       <div className="flex gap-1">
-        <button onClick={() => setTab("documents")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "documents" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-slate-500 hover:text-white"}`}>
-          DOCUMENTS <span className="ml-2 px-2 py-0.5 rounded-full bg-white/10 text-[10px]">{docs.length}</span>
+        <button onClick={() => setTab("documents")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "documents" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-[#6B7280] hover:text-ink"}`}>
+          DOCUMENTS <span className="ml-2 px-2 py-0.5 rounded-full bg-ink/10 text-[10px]">{docs.length}</span>
         </button>
-        <button onClick={() => setTab("audit")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "audit" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-slate-500 hover:text-white"}`}>
-          AUDIT TRAIL <span className="ml-2 px-2 py-0.5 rounded-full bg-white/10 text-[10px]">{auditTrail.length}</span>
+        <button onClick={() => setTab("audit")} className={`px-6 py-3 text-xs font-mono font-bold tracking-widest rounded-t-xl transition-all ${tab === "audit" ? "bg-obsidian-800/60 text-cybergold border-b-2 border-cybergold" : "text-[#6B7280] hover:text-ink"}`}>
+          AUDIT TRAIL <span className="ml-2 px-2 py-0.5 rounded-full bg-ink/10 text-[10px]">{auditTrail.length}</span>
         </button>
 
       </div>
@@ -955,39 +906,39 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
           <motion.div key="docs" {...fadeSlideUp} className="space-y-4">
             {allMlTags.length > 0 && (
               <div className="glass-panel rounded-xl px-4 py-3 flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-mono font-bold text-slate-500 tracking-widest flex items-center gap-1.5">
+                <span className="text-[10px] font-mono font-bold text-[#6B7280] tracking-widest flex items-center gap-1.5">
                   <Brain size={12} className="text-cybergold" /> ML TAGS
                 </span>
-                <button onClick={() => setMlFilter(null)} className={`px-3 py-1 text-[10px] font-mono font-bold rounded-full border transition-all ${mlFilter === null ? "bg-cybergold/10 border-cybergold/30 text-cybergold" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"}`}>
+                <button onClick={() => setMlFilter(null)} className={`px-3 py-1 text-[10px] font-mono font-bold rounded-full border transition-all ${mlFilter === null ? "bg-cybergold/10 border-cybergold/30 text-cybergold" : "bg-obsidian-700 border-fileline text-[#6B7280] hover:border-ink/20"}`}>
                   ALL {docs.length}
                 </button>
                 {allMlTags.map((tag) => {
                   const n = docs.filter((d) => (mlData[d.id]?.tags || []).includes(tag)).length;
                   return (
-                    <button key={tag} onClick={() => setMlFilter(mlFilter === tag ? null : tag)} className={`px-3 py-1 text-[10px] font-mono font-bold rounded-full border transition-all ${mlFilter === tag ? "bg-biometric/10 border-biometric/30 text-biometric" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"}`}>
+                    <button key={tag} onClick={() => setMlFilter(mlFilter === tag ? null : tag)} className={`px-3 py-1 text-[10px] font-mono font-bold rounded-full border transition-all ${mlFilter === tag ? "bg-biometric/10 border-biometric/30 text-biometric" : "bg-obsidian-700 border-fileline text-[#6B7280] hover:border-ink/20"}`}>
                       #{tag} {n > 0 && <span className="opacity-70">· {n}</span>}
                     </button>
                   );
                 })}
                 {mlFilter !== null && (
-                  <span className="text-[10px] font-mono text-slate-500">showing {visibleDocs.length} of {docs.length} — click the tag again to clear</span>
+                  <span className="text-[10px] font-mono text-[#6B7280]">showing {visibleDocs.length} of {docs.length} — click the tag again to clear</span>
                 )}
               </div>
             )}
 
             {loadingDocs ? (
-              <div className="py-16 text-center text-slate-500 font-mono text-sm">LOADING DOCUMENTS...</div>
+              <div className="py-16 text-center text-[#6B7280] font-mono text-sm">LOADING DOCUMENTS...</div>
             ) : docs.length === 0 ? (
               <div className="glass-panel rounded-2xl py-16 text-center">
-                <Database size={40} className="text-slate-700 mx-auto mb-4" />
-                <p className="text-white font-bold font-mono mb-1">NO EVIDENCE FILED</p>
-                <p className="text-slate-500 text-sm">Add the first piece of evidence using the button above.</p>
+                <Database size={40} className="text-[#B9AE93] mx-auto mb-4" />
+                <p className="text-ink font-bold font-mono mb-1">NO EVIDENCE FILED</p>
+                <p className="text-[#6B7280] text-sm">Add the first piece of evidence using the button above.</p>
               </div>
             ) : visibleDocs.length === 0 ? (
               <div className="glass-panel rounded-2xl py-16 text-center">
-                <Brain size={40} className="text-slate-700 mx-auto mb-4" />
-                <p className="text-white font-bold font-mono mb-1">NO EVIDENCE WITH THIS TAG</p>
-                <p className="text-slate-500 text-sm">No evidence in this case carries the tag #{mlFilter}.</p>
+                <Brain size={40} className="text-[#B9AE93] mx-auto mb-4" />
+                <p className="text-ink font-bold font-mono mb-1">NO EVIDENCE WITH THIS TAG</p>
+                <p className="text-[#6B7280] text-sm">No evidence in this case carries the tag #{mlFilter}.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -996,15 +947,15 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
                   const tags = mlData[doc.id]?.tags || [];
                   return (
                     <motion.div key={doc.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} onClick={() => setOpenDocId(doc.id)}
-                      className="glass-panel rounded-xl p-5 border border-white/5 hover:border-cybergold/30 transition-all cursor-pointer group"
+                      className="glass-panel rounded-xl p-5 border border-fileline hover:border-cybergold/30 transition-all cursor-pointer group"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-cybergold transition-colors">
+                        <div className="w-11 h-11 rounded-xl bg-obsidian-700 flex items-center justify-center text-[#6B7280] group-hover:text-cybergold transition-colors">
                           <DIcon size={20} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-bold text-white group-hover:text-cybergold transition-colors truncate">{doc.title}</div>
-                          <div className="text-[10px] font-mono text-slate-500 mt-0.5">{doc.doc_type?.replace(/_/g, " ")} · {doc.sensitivity_level}</div>
+                          <div className="text-sm font-bold text-ink group-hover:text-cybergold transition-colors truncate">{doc.title}</div>
+                          <div className="text-[10px] font-mono text-[#6B7280] mt-0.5">{doc.doc_type?.replace(/_/g, " ")} · {doc.sensitivity_level}</div>
                         </div>
                         <StatusPill status={doc.status === "active" ? "Active" : doc.status} />
                       </div>
@@ -1012,7 +963,7 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
                         <div className="flex gap-1.5 flex-wrap mt-3" onClick={(e) => e.stopPropagation()}>
                           {tags.map((tag) => (
                             <button key={tag} onClick={() => setMlFilter(mlFilter === tag ? null : tag)} title={`Show only evidence tagged #${tag}`}
-                              className={`px-2 py-0.5 text-[9px] font-mono font-bold rounded-full border transition-all ${mlFilter === tag ? "bg-biometric/10 border-biometric/30 text-biometric" : "bg-white/5 border-white/10 text-slate-500 hover:text-biometric hover:border-biometric/30"}`}>
+                              className={`px-2 py-0.5 text-[9px] font-mono font-bold rounded-full border transition-all ${mlFilter === tag ? "bg-biometric/10 border-biometric/30 text-biometric" : "bg-obsidian-700 border-fileline text-[#6B7280] hover:text-biometric hover:border-biometric/30"}`}>
                               #{tag}
                             </button>
                           ))}
@@ -1029,39 +980,39 @@ function CaseDetail({ caseItem, role, onBack, onNotify, onUpdate }: any) {
         {tab === "audit" && (
           <motion.div key="audit" {...fadeSlideUp} className="glass-panel rounded-2xl p-6">
             {loadingAudit ? (
-              <div className="py-16 text-center text-slate-500 font-mono text-sm">LOADING AUDIT TRAIL...</div>
+              <div className="py-16 text-center text-[#6B7280] font-mono text-sm">LOADING AUDIT TRAIL...</div>
             ) : auditTrail.length === 0 ? (
               <div className="py-16 text-center">
-                <ShieldCheck size={40} className="text-slate-700 mx-auto mb-4" />
-                <p className="text-white font-bold font-mono mb-1">NO EVENTS RECORDED</p>
-                <p className="text-slate-500 text-sm">Events appear here as actions are performed.</p>
+                <ShieldCheck size={40} className="text-[#B9AE93] mx-auto mb-4" />
+                <p className="text-ink font-bold font-mono mb-1">NO EVENTS RECORDED</p>
+                <p className="text-[#6B7280] text-sm">Events appear here as actions are performed.</p>
               </div>
             ) : (
               <div className="space-y-0">
                 {auditTrail.map((ev, i) => (
                   <div key={ev.id} className="flex gap-5 relative">
-                    {i < auditTrail.length - 1 && <div className="absolute left-[7px] top-6 bottom-0 w-px bg-white/10" />}
-                    <div className={`w-4 h-4 rounded-full border-2 mt-1 shrink-0 relative z-10 ${ev.event_type.includes("upload") || ev.event_type.includes("version") ? "border-biometric bg-biometric/20 shadow-[0_0_8px_rgba(0,240,255,0.3)]" : ev.event_type.includes("sign") ? "border-cybergold bg-cybergold/20" : "border-slate-600 bg-obsidian-800"}`} />
+                    {i < auditTrail.length - 1 && <div className="absolute left-[7px] top-6 bottom-0 w-px bg-fileline" />}
+                    <div className={`w-4 h-4 rounded-full border-2 mt-1 shrink-0 relative z-10 ${ev.event_type.includes("upload") || ev.event_type.includes("version") ? "border-biometric bg-biometric/20 shadow-[0_0_8px_rgba(36,64,122,0.25)]" : ev.event_type.includes("sign") ? "border-cybergold bg-cybergold/20" : "border-fileline bg-obsidian-800"}`} />
                     <div className="flex-1 pb-6">
-                      <div className="text-sm font-bold text-white">{ev.action}</div>
-                      <div className="text-[10px] font-mono text-slate-500 mt-1 flex items-center gap-3 flex-wrap">
+                      <div className="text-sm font-bold text-ink">{ev.action}</div>
+                      <div className="text-[10px] font-mono text-[#6B7280] mt-1 flex items-center gap-3 flex-wrap">
                         <span>{ev.event_type}</span>
                         {ev.actor_user_id && <span>by {ev.actor_user_id.slice(0, 8)}…</span>}
                         {ev.event_hash && (
-                          <span className="px-2 py-0.5 rounded bg-obsidian-900 border border-white/5 text-biometric">
+                          <span className="px-2 py-0.5 rounded bg-obsidian-900 border border-fileline text-biometric">
                             <Hash size={10} className="inline mr-1" />{ev.event_hash.slice(0, 16)}…
                           </span>
                         )}
                       </div>
                       {ev.details && Object.keys(ev.details).length > 0 && (
-                        <div className="text-[9px] font-mono text-slate-600 mt-2 space-y-0.5">
+                        <div className="text-[9px] font-mono text-[#6B7280] mt-2 space-y-0.5">
                           {Object.entries(ev.details).slice(0, 4).map(([k, v]) => (
-                            <div key={k}><span className="text-slate-500">{k}:</span> {String(v ?? "—").slice(0, 80)}</div>
+                            <div key={k}><span className="text-[#6B7280]">{k}:</span> {String(v ?? "—").slice(0, 80)}</div>
                           ))}
                         </div>
                       )}
                     </div>
-                    <div className="text-[10px] font-mono text-slate-600 whitespace-nowrap mt-1">{formatDate(ev.created_at)}</div>
+                    <div className="text-[10px] font-mono text-[#6B7280] whitespace-nowrap mt-1">{formatDate(ev.created_at)}</div>
                   </div>
                 ))}
               </div>
@@ -1097,11 +1048,11 @@ function MetricCard({ title, value, icon: Icon, accent }: any) {
   return (
     <motion.div variants={staggerItem} className="glass-panel rounded-xl p-6 glow-border relative overflow-hidden group hover:glow-border-hover">
       <div className="absolute top-4 right-4 opacity-10 group-hover:opacity-20 transition-opacity duration-500">
-        <Icon size={64} className={accent ? "text-cybergold" : "text-slate-400"} />
+        <Icon size={64} className={accent ? "text-cybergold" : "text-ink"} />
       </div>
       <div className="relative z-10">
-        <h3 className="text-[9px] font-mono font-bold text-slate-500 tracking-[0.2em] mb-5">{title}</h3>
-        <div className="text-3xl font-bold font-mono tracking-tight text-white">{value}</div>
+        <h3 className="text-[9px] font-mono font-bold text-[#6B7280] tracking-[0.2em] mb-5">{title}</h3>
+        <div className="text-3xl font-bold font-mono tracking-tight text-ink">{value}</div>
       </div>
     </motion.div>
   );
@@ -1110,11 +1061,11 @@ function MetricCard({ title, value, icon: Icon, accent }: any) {
 // ── Status Pill ──────────────────────────────────────────────────────
 function StatusPill({ status }: { status: string }) {
   const s = status?.toLowerCase() || "";
-  let cls = "bg-white/10 text-slate-400 border-white/10";
+  let cls = "bg-ink/10 text-[#4B5563] border-ink/20";
   if (s === "active") cls = "bg-biometric/10 text-biometric border-biometric/20";
   else if (s === "review") cls = "bg-cybergold/10 text-cybergold border-cybergold/20";
-  else if (s === "closed") cls = "bg-slate-500/10 text-slate-400 border-slate-500/20";
-  else if (s === "dissolved") cls = "bg-red-500/10 text-red-400 border-red-500/20";
+  else if (s === "closed") cls = "bg-ink/5 text-[#4B5563] border-ink/15";
+  else if (s === "dissolved") cls = "bg-seal/10 text-seal border-seal/20";
 
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-mono font-bold tracking-widest border ${cls}`}>
@@ -1156,27 +1107,27 @@ function NewCaseModal({ onClose, onSuccess }: any) {
   }
 
   return (
-    <div className="bg-obsidian-800 border border-white/10 rounded-2xl p-8 shadow-2xl">
+    <div className="bg-obsidian-800 border border-fileline rounded-2xl p-8 shadow-xl">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-bold font-mono text-white tracking-widest flex items-center gap-3">
+        <h2 className="text-lg font-bold font-mono text-ink tracking-widest flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-cybergold/10 flex items-center justify-center"><FolderOpen size={18} className="text-cybergold" /></div>
           NEW CASE FILE
         </h2>
-        <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors"><X size={20} /></button>
+        <button onClick={onClose} className="text-[#6B7280] hover:text-ink transition-colors"><X size={20} /></button>
       </div>
       <form onSubmit={submit} className="space-y-5">
         <label className="block">
-          <span className="text-[10px] font-mono text-slate-500 tracking-widest block mb-2">CASE TITLE</span>
-          <input value={title} onChange={e => setTitle(e.target.value)} required className="w-full h-12 px-4 bg-obsidian-900 border border-white/10 rounded-xl text-sm font-mono text-white focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all" />
+          <span className="text-[10px] font-mono text-[#6B7280] tracking-widest block mb-2">CASE TITLE</span>
+          <input value={title} onChange={e => setTitle(e.target.value)} required className="w-full h-12 px-4 bg-obsidian-900 border border-fileline rounded-xl text-sm font-mono text-ink focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all" />
         </label>
         <label className="block">
-          <span className="text-[10px] font-mono text-slate-500 tracking-widest block mb-2">DESCRIPTION</span>
-          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full px-4 py-3 bg-obsidian-900 border border-white/10 rounded-xl text-sm font-mono text-white resize-none focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all" />
+          <span className="text-[10px] font-mono text-[#6B7280] tracking-widest block mb-2">DESCRIPTION</span>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full px-4 py-3 bg-obsidian-900 border border-fileline rounded-xl text-sm font-mono text-ink resize-none focus:outline-none focus:border-cybergold/50 focus:ring-1 focus:ring-cybergold/30 transition-all" />
         </label>
-        {error && <p className="text-red-400 text-xs font-mono">{error}</p>}
+        {error && <p className="text-seal text-xs font-mono">{error}</p>}
         <div className="flex gap-3 pt-2">
-          <button type="button" onClick={onClose} className="flex-1 h-11 border border-white/10 rounded-xl text-xs font-mono font-bold text-slate-400 hover:bg-white/5 transition-all">CANCEL</button>
-          <button type="submit" disabled={loading} className="flex-1 h-11 bg-white text-obsidian-900 rounded-xl text-xs font-mono font-bold disabled:opacity-40 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] transition-all">
+          <button type="button" onClick={onClose} className="flex-1 h-11 border border-fileline rounded-xl text-xs font-mono font-bold text-[#6B7280] hover:bg-ink/5 transition-all">CANCEL</button>
+          <button type="submit" disabled={loading} className="flex-1 h-11 bg-registry text-paper rounded-xl text-xs font-mono font-bold disabled:opacity-40 hover:shadow-[0_0_15px_rgba(36,64,122,0.25)] transition-all">
             {loading ? "CREATING..." : "CREATE CASE"}
           </button>
         </div>
@@ -1207,36 +1158,36 @@ function EditCaseModal({ caseItem, onClose, onSuccess }: any) {
   }
 
   return (
-    <div className="bg-obsidian-800 border border-white/10 rounded-2xl p-8 shadow-2xl">
+    <div className="bg-obsidian-800 border border-fileline rounded-2xl p-8 shadow-xl">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-bold font-mono text-white tracking-widest flex items-center gap-3">
+        <h2 className="text-lg font-bold font-mono text-ink tracking-widest flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-cybergold/10 flex items-center justify-center"><Settings2 size={18} className="text-cybergold" /></div>
           EDIT CASE
         </h2>
-        <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors"><X size={20} /></button>
+        <button onClick={onClose} className="text-[#6B7280] hover:text-ink transition-colors"><X size={20} /></button>
       </div>
       <form onSubmit={submit} className="space-y-5">
         <label className="block">
-          <span className="text-[10px] font-mono text-slate-500 tracking-widest block mb-2">CASE TITLE</span>
-          <input value={title} onChange={e => setTitle(e.target.value)} required className="w-full h-12 px-4 bg-obsidian-900 border border-white/10 rounded-xl text-sm font-mono text-white focus:outline-none focus:border-cybergold/50 transition-all" />
+          <span className="text-[10px] font-mono text-[#6B7280] tracking-widest block mb-2">CASE TITLE</span>
+          <input value={title} onChange={e => setTitle(e.target.value)} required className="w-full h-12 px-4 bg-obsidian-900 border border-fileline rounded-xl text-sm font-mono text-ink focus:outline-none focus:border-cybergold/50 transition-all" />
         </label>
         <label className="block">
-          <span className="text-[10px] font-mono text-slate-500 tracking-widest block mb-2">CONTEXT NOTES</span>
-          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full px-4 py-3 bg-obsidian-900 border border-white/10 rounded-xl text-sm font-mono text-white resize-none focus:outline-none focus:border-cybergold/50 transition-all" />
+          <span className="text-[10px] font-mono text-[#6B7280] tracking-widest block mb-2">CONTEXT NOTES</span>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full px-4 py-3 bg-obsidian-900 border border-fileline rounded-xl text-sm font-mono text-ink resize-none focus:outline-none focus:border-cybergold/50 transition-all" />
         </label>
         <label className="block">
-          <span className="text-[10px] font-mono text-slate-500 tracking-widest block mb-2">STATUS</span>
-          <select value={status} onChange={e => setStatus(e.target.value)} className="w-full h-12 px-4 bg-obsidian-900 border border-white/10 rounded-xl text-sm font-mono text-white focus:outline-none focus:border-cybergold/50 transition-all appearance-none">
+          <span className="text-[10px] font-mono text-[#6B7280] tracking-widest block mb-2">STATUS</span>
+          <select value={status} onChange={e => setStatus(e.target.value)} className="w-full h-12 px-4 bg-obsidian-900 border border-fileline rounded-xl text-sm font-mono text-ink focus:outline-none focus:border-cybergold/50 transition-all appearance-none">
             <option value="Active">Active</option>
             <option value="Review">Review</option>
             <option value="Closed">Closed</option>
             <option value="Dissolved">Dissolved</option>
           </select>
         </label>
-        {error && <p className="text-red-400 text-xs font-mono">{error}</p>}
+        {error && <p className="text-seal text-xs font-mono">{error}</p>}
         <div className="flex gap-3 pt-2">
-          <button type="button" onClick={onClose} className="flex-1 h-11 border border-white/10 rounded-xl text-xs font-mono font-bold text-slate-400 hover:bg-white/5 transition-all">CANCEL</button>
-          <button type="submit" disabled={loading} className="flex-1 h-11 bg-white text-obsidian-900 rounded-xl text-xs font-mono font-bold disabled:opacity-40 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] transition-all">
+          <button type="button" onClick={onClose} className="flex-1 h-11 border border-fileline rounded-xl text-xs font-mono font-bold text-[#6B7280] hover:bg-ink/5 transition-all">CANCEL</button>
+          <button type="submit" disabled={loading} className="flex-1 h-11 bg-registry text-paper rounded-xl text-xs font-mono font-bold disabled:opacity-40 hover:shadow-[0_0_15px_rgba(36,64,122,0.25)] transition-all">
             {loading ? "SAVING..." : "SAVE CHANGES"}
           </button>
         </div>
@@ -1270,23 +1221,23 @@ function UploadEvidenceModal({ caseId, onClose, onSuccess }: any) {
   }
 
   return (
-    <div className="bg-obsidian-800 border border-white/10 rounded-2xl p-8 shadow-2xl">
+    <div className="bg-obsidian-800 border border-fileline rounded-2xl p-8 shadow-xl">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-bold font-mono text-white tracking-widest flex items-center gap-3">
+        <h2 className="text-lg font-bold font-mono text-ink tracking-widest flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-biometric/10 flex items-center justify-center"><Upload size={18} className="text-biometric" /></div>
           ADD EVIDENCE
         </h2>
-        <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors"><X size={20} /></button>
+        <button onClick={onClose} className="text-[#6B7280] hover:text-ink transition-colors"><X size={20} /></button>
       </div>
       <form onSubmit={submit} className="space-y-5">
         <label className="block">
-          <span className="text-[10px] font-mono text-slate-500 tracking-widest block mb-2">EVIDENCE TITLE</span>
-          <input value={title} onChange={e => setTitle(e.target.value)} required className="w-full h-12 px-4 bg-obsidian-900 border border-white/10 rounded-xl text-sm font-mono text-white focus:outline-none focus:border-biometric/50 transition-all" />
+          <span className="text-[10px] font-mono text-[#6B7280] tracking-widest block mb-2">EVIDENCE TITLE</span>
+          <input value={title} onChange={e => setTitle(e.target.value)} required className="w-full h-12 px-4 bg-obsidian-900 border border-fileline rounded-xl text-sm font-mono text-ink focus:outline-none focus:border-biometric/50 transition-all" />
         </label>
         <div className="grid grid-cols-2 gap-4">
           <label className="block">
-            <span className="text-[10px] font-mono text-slate-500 tracking-widest block mb-2">TYPE</span>
-            <select value={docType} onChange={e => setDocType(e.target.value)} className="w-full h-12 px-4 bg-obsidian-900 border border-white/10 rounded-xl text-sm font-mono text-white focus:outline-none focus:border-biometric/50 transition-all appearance-none">
+            <span className="text-[10px] font-mono text-[#6B7280] tracking-widest block mb-2">TYPE</span>
+            <select value={docType} onChange={e => setDocType(e.target.value)} className="w-full h-12 px-4 bg-obsidian-900 border border-fileline rounded-xl text-sm font-mono text-ink focus:outline-none focus:border-biometric/50 transition-all appearance-none">
               <option value="forensic_report">Forensic Report</option>
               <option value="witness_statement">Witness Statement</option>
               <option value="surveillance_footage">Surveillance</option>
@@ -1295,8 +1246,8 @@ function UploadEvidenceModal({ caseId, onClose, onSuccess }: any) {
             </select>
           </label>
           <label className="block">
-            <span className="text-[10px] font-mono text-slate-500 tracking-widest block mb-2">SENSITIVITY</span>
-            <select value={sensitivity} onChange={e => setSensitivity(e.target.value)} className="w-full h-12 px-4 bg-obsidian-900 border border-white/10 rounded-xl text-sm font-mono text-white focus:outline-none focus:border-biometric/50 transition-all appearance-none">
+            <span className="text-[10px] font-mono text-[#6B7280] tracking-widest block mb-2">SENSITIVITY</span>
+            <select value={sensitivity} onChange={e => setSensitivity(e.target.value)} className="w-full h-12 px-4 bg-obsidian-900 border border-fileline rounded-xl text-sm font-mono text-ink focus:outline-none focus:border-biometric/50 transition-all appearance-none">
               <option value="public">Public</option>
               <option value="internal">Internal</option>
               <option value="restricted">Restricted</option>
@@ -1304,22 +1255,22 @@ function UploadEvidenceModal({ caseId, onClose, onSuccess }: any) {
             </select>
           </label>
         </div>
-        <div onClick={() => fileRef.current?.click()} className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${file ? "border-biometric/40 bg-biometric/5" : "border-white/10 hover:border-biometric/30 hover:bg-white/[0.02]"}`}>
+        <div onClick={() => fileRef.current?.click()} className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${file ? "border-biometric/40 bg-biometric/5" : "border-fileline hover:border-biometric/30 hover:bg-ink/[0.03]"}`}>
           <input ref={fileRef} type="file" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
           {file ? (
-            <div className="text-sm font-mono text-biometric">{file.name} <span className="text-slate-500">({(file.size / 1024).toFixed(1)} KB)</span></div>
+            <div className="text-sm font-mono text-biometric">{file.name} <span className="text-[#6B7280]">({(file.size / 1024).toFixed(1)} KB)</span></div>
           ) : (
             <>
-              <Upload size={24} className="text-slate-600 mx-auto mb-2" />
-              <p className="text-sm text-slate-400 font-mono">Click to attach file</p>
-              <p className="text-[10px] text-slate-600 font-mono mt-1">Documents, images, audio, video</p>
+              <Upload size={24} className="text-[#B9AE93] mx-auto mb-2" />
+              <p className="text-sm text-[#6B7280] font-mono">Click to attach file</p>
+              <p className="text-[10px] text-[#6B7280] font-mono mt-1">Documents, images, audio, video</p>
             </>
           )}
         </div>
-        {error && <p className="text-red-400 text-xs font-mono">{error}</p>}
+        {error && <p className="text-seal text-xs font-mono">{error}</p>}
         <div className="flex gap-3 pt-2">
-          <button type="button" onClick={onClose} className="flex-1 h-11 border border-white/10 rounded-xl text-xs font-mono font-bold text-slate-400 hover:bg-white/5 transition-all">CANCEL</button>
-          <button type="submit" disabled={loading || !title} className="flex-1 h-11 bg-biometric text-obsidian-900 rounded-xl text-xs font-mono font-bold disabled:opacity-40 hover:shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all">
+          <button type="button" onClick={onClose} className="flex-1 h-11 border border-fileline rounded-xl text-xs font-mono font-bold text-[#6B7280] hover:bg-ink/5 transition-all">CANCEL</button>
+          <button type="submit" disabled={loading || !title} className="flex-1 h-11 bg-registry text-paper rounded-xl text-xs font-mono font-bold disabled:opacity-40 hover:shadow-[0_0_15px_rgba(36,64,122,0.25)] transition-all">
             {loading ? "SEALING..." : "SEAL & UPLOAD"}
           </button>
         </div>

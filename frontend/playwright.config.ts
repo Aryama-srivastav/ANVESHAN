@@ -20,7 +20,9 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: "npx vite preview --port 5173 --dir dist",
+    // `vite preview` serves build.outDir (dist/) from vite.config.ts — it has no
+    // --dir flag, so the port is the only argument needed here.
+    command: "npm run preview",
     url: "http://localhost:5173",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

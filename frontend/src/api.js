@@ -31,12 +31,18 @@ export async function apiRequest(path, options = {}) {
   if (!response.ok) {
     const bodyText = await response.text();
     let detail = "";
+    let parsed = false;
     try {
       const j = JSON.parse(bodyText);
+      parsed = true;
       detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail ?? j);
-    } catch { detail = bodyText; }
+    } catch { detail = ""; }
     if (response.status === 401 && token) clearSession();
-    throw new Error(detail || `Request failed with ${response.status}`);
+    // FastAPI answers with {detail}; proxies/HTML error pages are not JSON, so
+    // keep the status readable and append a short snippet of the raw body.
+    const reason = parsed && detail ? detail : `Request failed with ${response.status}`;
+    const snippet = !parsed && bodyText.trim() ? `: ${bodyText.trim().slice(0, 200)}` : "";
+    throw new Error(reason + snippet);
   }
   return response.status === 204 ? null : response.json();
 }

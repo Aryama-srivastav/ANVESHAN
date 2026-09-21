@@ -1,52 +1,60 @@
 @import "tailwindcss";
 
 @theme {
-  --color-obsidian-900: #090A0F;
-  --color-obsidian-800: #11131a;
-  --color-obsidian-700: #181a24;
-  --color-navy-900: #0F172A;
-  --color-navy-800: #1E293B;
-  --color-cybergold: #D4AF37;
-  --color-biometric: #00F0FF;
-  --color-cyberalert: #FF003C;
+  /* ── Court Registry (light) ─────────────────────────────────────
+     Parchment base, judicial ink, registry blue, seal maroon,
+     muted brass. Light-only theme. Legacy dark token names are
+     remapped below so existing classes keep working during the
+     reskin (obsidian → paper tones, biometric → registry blue). */
+  --color-obsidian-900: #F4EFE4;
+  --color-obsidian-800: #FBF8F1;
+  --color-obsidian-700: #EDE6D3;
+  --color-navy-900: #1B2A4A;
+  --color-navy-800: #24407A;
+  --color-cybergold: #9A7B2E;
+  --color-biometric: #24407A;
+  --color-cyberalert: #7A1F2B;
+  --color-parchment: #F4EFE4;
+  --color-paper: #FBF8F1;
+  --color-ink: #1B2A4A;
+  --color-registry: #24407A;
+  --color-seal: #7A1F2B;
+  --color-brass: #9A7B2E;
+  --color-ledger: #1E6B4A;
+  --color-fileline: #D8CFB8;
   --font-sans: 'Inter', sans-serif;
+  --font-serif: 'Source Serif 4', 'Spectral', Georgia, serif;
   --font-mono: 'Fira Code', 'Consolas', monospace;
 }
 
 @layer base {
   body {
-    background-color: var(--color-obsidian-900);
-    color: #cbd5e1;
+    background-color: var(--color-parchment);
+    color: #1B2A4A;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
-    background-image:
-      linear-gradient(rgba(212, 175, 55, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(212, 175, 55, 0.03) 1px, transparent 1px);
-    background-size: 30px 30px;
-    background-position: -1px -1px;
+    background-image: none;
   }
 }
 
 @utility glass-panel {
-  background-color: rgba(17, 19, 26, 0.60);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  background-color: #FBF8F1;
+  border: 1px solid #D8CFB8;
+  box-shadow: 0 1px 2px rgba(27, 42, 74, 0.06), 0 4px 14px rgba(27, 42, 74, 0.06);
 }
 
 @utility glow-border {
-  border: 1px solid rgba(212, 175, 55, 0.2);
+  border: 1px solid rgba(154, 123, 46, 0.35);
   transition: all 0.3s ease;
 }
 
 @utility glow-border-hover {
-  border-color: rgba(212, 175, 55, 0.6);
-  box-shadow: 0 0 15px rgba(212, 175, 55, 0.15);
+  border-color: rgba(154, 123, 46, 0.7);
+  box-shadow: 0 0 0 3px rgba(154, 123, 46, 0.12);
 }
 
 @utility text-glow-green {
-  text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+  text-shadow: none;
 }
 
 @utility scrollbar-hide {
@@ -59,24 +67,24 @@
   display: none;
 }
 
-/* Biometric scanner animation */
+/* Biometric scanner animation — retired in the Court Registry theme.
+   Kept as a no-op so legacy class references do not break. */
 @keyframes scanline {
   0% {
-    transform: translateY(-100%);
+    transform: none;
   }
 
   100% {
-    transform: translateY(200%);
+    transform: none;
   }
 }
 
 .scan-line {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(to bottom, transparent, rgba(0, 240, 255, 0.2));
-  animation: scanline 2s linear infinite;
-  pointer-events: none;
+  display: none;
+}
+
+/* Serious registry seal: restrained brass ring, no neon */
+@utility seal-ring {
+  border: 2px solid rgba(154, 123, 46, 0.55);
+  box-shadow: 0 0 0 4px rgba(154, 123, 46, 0.12), inset 0 0 0 1px rgba(154, 123, 46, 0.25);
 }

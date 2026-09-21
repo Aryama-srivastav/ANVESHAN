@@ -86,6 +86,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests (vitest)
+        run: npm run test:unit
+
       - name: Production build
         env:
           VITE_API_URL: http://localhost:8000
