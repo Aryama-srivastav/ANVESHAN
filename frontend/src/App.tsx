@@ -38,7 +38,7 @@ function useBrandAsset(url: string) {
 }
 
 /** Logo: your icon.png when uploaded, else the supplied fallback icon (ShieldAlert by default). */
-function BrandLogo({ size = 28, boxClass = "", iconFallback }: { size?: number; boxClass?: string; iconFallback?: React.ComponentType<{ className?: string }> }) {
+function BrandLogo({ size = 50, boxClass = "", iconFallback }: { size?: number; boxClass?: string; iconFallback?: React.ComponentType<{ className?: string }> }) {
   const hasIcon = useBrandAsset(BRAND_ICON_URL);
   const Fallback = iconFallback ?? ShieldAlert;
   if (hasIcon) {
@@ -315,7 +315,7 @@ function LoginView({ onLogin }: { onLogin: (t: string, r: string) => void }) {
     }
   }
 
-  const roles = ["investigator", "auditor", "admin", "viewer"];
+  const roles = ["investigator", "auditor", "admin", ];
 
   // Grey registry gate. Before unlock: steel lock-pad with brass ring
   // holding the icon. After unlock: the pad dissolves, options appear.
