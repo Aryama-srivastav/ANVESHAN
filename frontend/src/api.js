@@ -1,5 +1,11 @@
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// Every call fails fast instead of hanging forever when the API is down:
+// JSON calls get REQUEST_TIMEOUT_MS, multipart uploads/downloads get the
+// longer UPLOAD_TIMEOUT_MS budget.
+const REQUEST_TIMEOUT_MS = 20000;
+const UPLOAD_TIMEOUT_MS = 120000;
+
 const TOKEN_KEY = "anveshan_token";
 const ROLE_KEY = "anveshan_role";
 
@@ -17,16 +23,38 @@ export function clearSession() {
   localStorage.removeItem(ROLE_KEY);
 }
 
+/** fetch() with a hard deadline: a dead/slow API produces a readable error
+    instead of leaving the UI (sign-in included) hanging indefinitely. */
+async function fetchWithTimeout(url, init = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      throw new Error("The ANVESHAN API did not respond in time — the service may be starting up or unavailable.");
+    }
+    throw new Error("Could not reach the ANVESHAN API — check your connection or try again shortly.");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function apiRequest(path, options = {}) {
   const token = getToken();
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
+  const isUpload = options.body instanceof FormData;
+  const response = await fetchWithTimeout(
+    `${API_BASE}${path}`,
+    {
+      ...options,
+      headers: {
+        ...(isUpload ? {} : { "Content-Type": "application/json" }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
     },
-  });
+    isUpload ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
+  );
 
   if (!response.ok) {
     const bodyText = await response.text();
@@ -50,9 +78,11 @@ export async function apiRequest(path, options = {}) {
 /** Authenticated binary fetch that triggers a browser download. */
 async function apiDownload(path, fallbackName) {
   const token = getToken();
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const response = await fetchWithTimeout(
+    `${API_BASE}${path}`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    UPLOAD_TIMEOUT_MS,
+  );
   if (!response.ok) {
     let detail = `Download failed with ${response.status}`;
     try { const j = await response.json(); if (typeof j.detail === "string") detail = j.detail; } catch { /* ignore */ }
@@ -136,7 +166,6 @@ export const api = {
   attachOriginalRecord: (docId, payload) => apiRequest(`/v1/documents/${docId}/original-record`, { method: "POST", body: JSON.stringify(payload) }),
     getDocumentAuditTrail: (docId) => apiRequest(`/v1/documents/${docId}/audit-trail`),
   getDocumentExternalRecords: (docId) => apiRequest(`/v1/documents/${docId}/external-records`),
-  getDocumentLineage: (docId) => apiRequest(`/v1/documents/${docId}/lineage`),
   downloadVersion: (docId, versionId, fileName) => apiDownload(`/v1/documents/${docId}/versions/${versionId}/content`, fileName || "evidence.bin"),
 
   // ── Digital signatures ─────────────────────────────────────────────
@@ -189,7 +218,7 @@ export const api = {
 
   // ── Operations ─────────────────────────────────────────────────────
   backupStatus: () => apiRequest("/v1/ops/backup/status"),
-  health: () => fetch(`${API_BASE}/health`).then(r => r.json()),
+  health: () => fetchWithTimeout(`${API_BASE}/health`).then(r => r.json()),
 };
 
 export default api;

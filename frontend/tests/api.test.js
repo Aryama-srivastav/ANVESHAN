@@ -30,6 +30,7 @@ describe("api client", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("exposes the documented surface", () => {
@@ -144,6 +145,28 @@ describe("api client", () => {
     stubFetch(async () => jsonResponse("not json", 500));
     await expect(api.listCases()).rejects.toThrow(/Request failed with 500/);
     await expect(api.listCases()).rejects.toThrow(/not json/);
+  });
+
+  it("apiRequest aborts a hanging request with a readable timeout error", async () => {
+    vi.useFakeTimers();
+    stubFetch(
+      (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () => {
+            const err = new Error("The operation was aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        }),
+    );
+    const pending = expect(api.listCases()).rejects.toThrow(/did not respond in time/);
+    await vi.advanceTimersByTimeAsync(20000);
+    await pending;
+  });
+
+  it("apiRequest wraps network failures in a friendly API-unreachable message", async () => {
+    stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+    await expect(api.listCases()).rejects.toThrow(/Could not reach the ANVESHAN API/);
   });
 
   it("query() skips empty values and repeats array params", () => {

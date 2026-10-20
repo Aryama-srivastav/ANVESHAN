@@ -765,12 +765,19 @@ class DepartmentRequestService:
         if req is None:
             raise LookupError("Request not found")
         # Only a member of the destination department (to_department matches the
-        # actor's department) or an admin may approve/reject.
+        # actor's department) or an admin may approve/reject. Requests whose
+        # destination could not be resolved (no holder / holder without a
+        # department) are admin-only — otherwise any authenticated non-admin
+        # could review a request addressed to nobody.
         actor = db.get(models.User, actor_id)
         is_admin = AccessService._is_admin(db, actor_id)
         if not is_admin:
             actor_dept = actor.department if actor else None
-            if req.to_department and req.to_department != actor_dept:
+            if not req.to_department:
+                raise PermissionError(
+                    "This request has no destination department; only an administrator may review it"
+                )
+            if req.to_department != actor_dept:
                 raise PermissionError("Only a member of the destination department may review this request")
         req.status = payload.status
         req.review_notes = payload.review_notes

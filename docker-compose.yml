@@ -52,6 +52,13 @@ services:
       GOV_ID_API_URL: ${GOV_ID_API_URL:-}
       GOV_ID_API_KEY: ${GOV_ID_API_KEY:-}
       GOV_ID_API_TIMEOUT: ${GOV_ID_API_TIMEOUT:-15}
+      # Viewer OTP email delivery (empty = development code-fallback).
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
     volumes:
       - evidence-data:/data/uploads
       - signing-keys:/data/keys

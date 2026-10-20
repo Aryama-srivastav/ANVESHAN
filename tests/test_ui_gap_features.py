@@ -198,6 +198,48 @@ def test_department_request_unknown_document_is_404(v1) -> None:
     assert missing.status_code == 404
 
 
+def test_department_request_without_destination_is_admin_only(v1) -> None:
+    """Requests with no resolvable destination department are admin-only.
+
+    ``create`` leaves ``to_department`` empty when the document has no
+    uploaded version (no holder). The review check must not treat an empty
+    destination as "addressed to anyone" — that would let any authenticated
+    non-admin officer approve a request addressed to nobody.
+    """
+    case_id = _create_case(v1, "CASE-GAP-NODEST")
+    document_id = _create_document(v1, case_id)  # no upload → no holder → no destination
+
+    created = v1.client.post(
+        "/v1/department-requests",
+        json={"document_id": document_id, "purpose": "Unrouted investigative need"},
+    )
+    assert created.status_code == 200, created.text
+    request_id = created.json()["id"]
+    assert created.json()["to_department"] is None
+
+    # A non-admin officer must be rejected, not silently allowed through.
+    forbidden = v1.client.patch(
+        f"/v1/department-requests/{request_id}",
+        json={"status": "approved"},
+        headers=v1.as_("recipient"),
+    )
+    assert forbidden.status_code == 403, forbidden.text
+    assert "no destination department" in forbidden.json()["detail"].lower()
+
+    # Still pending after the blocked attempt.
+    filer_view = v1.client.get("/v1/department-requests")
+    assert filer_view.json()[0]["status"] == "pending"
+
+    # An administrator can still action it.
+    approved = v1.client.patch(
+        f"/v1/department-requests/{request_id}",
+        json={"status": "approved", "review_notes": "Routed by administration"},
+        headers=v1.as_("admin"),
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "approved"
+
+
 # ---------------------------------------------------------------------------
 # Cross-version lineage verification (wired into the evidence detail modal)
 # ---------------------------------------------------------------------------
