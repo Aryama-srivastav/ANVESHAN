@@ -636,3 +636,161 @@ class ComplaintStatusUpdate(BaseModel):
     status: str = Field(pattern="^(open|acknowledged|closed)$")
 
 
+# ---------------------------------------------------------------------------
+# Cross-document derivation links (provenance)
+# ---------------------------------------------------------------------------
+
+
+class EvidenceLinkCreate(BaseModel):
+    parent_document_id: str
+    child_document_id: str
+    relation_type: str = Field(
+        pattern="^(extracted_from|frame_from|redacted_from|summarized_from|derived_from)$"
+    )
+    notes: Optional[str] = None
+
+
+class EvidenceLinkOut(BaseModel):
+    id: str
+    parent_document_id: str
+    child_document_id: str
+    relation_type: str
+    match_score: Optional[float] = None
+    match_reason: Optional[str] = None
+    notes: Optional[str] = None
+    created_by_user_id: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Legal Knowledge Base — IPC / CrPC / Evidence Act sections
+# ---------------------------------------------------------------------------
+
+
+class LegalArticleCreate(BaseModel):
+    code: str = Field(min_length=2, max_length=80)
+    name: str = Field(min_length=2, max_length=255)
+    jurisdiction: Optional[str] = "India"
+    status: Optional[str] = "active"
+
+
+class LegalArticleOut(BaseModel):
+    id: str
+    code: str
+    name: str
+    jurisdiction: str
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class LegalSectionCreate(BaseModel):
+    article_id: str
+    section_number: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=255)
+    text: Optional[str] = None
+    keywords: Optional[str] = None
+    jurisdiction: Optional[str] = "India"
+    status: Optional[str] = "active"
+
+
+class LegalSectionOut(BaseModel):
+    id: str
+    article_id: str
+    section_number: str
+    title: str
+    text: Optional[str]
+    keywords: Optional[str]
+    jurisdiction: str
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class LegalSectionListOut(BaseModel):
+    id: str
+    article_code: str
+    article_name: str
+    section_number: str
+    title: str
+    keywords: Optional[str]
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class LegalSuggestedSectionCreate(BaseModel):
+    case_id: str
+    section_id: str
+    match_score: float = Field(default=0.0, ge=0, le=1)
+    reason: Optional[str] = None
+    status: Optional[str] = "suggested"
+
+
+class LegalSuggestedSectionOut(BaseModel):
+    id: str
+    case_id: str
+    section_id: str
+    section_number: str
+    section_title: str
+    article_code: str
+    match_score: float
+    reason: Optional[str]
+    status: str
+    verified_by: Optional[str]
+    verified_at: Optional[datetime]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AcceptRejectRequest(BaseModel):
+    status: str = Field(pattern="^(accepted|dismissed)$")
+    notes: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Official Document Templates — fillable, downloadable gov-style forms
+# ---------------------------------------------------------------------------
+
+
+class TemplateFieldOut(BaseModel):
+    id: str
+    template_id: str
+    label: str
+    field_type: str
+    required: bool
+    default_value: Optional[str]
+    options: Optional[str]
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentTemplateOut(BaseModel):
+    id: str
+    slug: str
+    title: str
+    category: str
+    status: str
+    fields: list[TemplateFieldOut] = Field(default_factory=list)
+    model_config = {"from_attributes": True}
+
+
+class TemplateFillRequest(BaseModel):
+    fields: dict[str, str]
+
+
+class TemplateFillOut(BaseModel):
+    document_id: str
+    case_id: str
+    title: str
+    download_url: str
+    fields: dict[str, str]
+
+    model_config = {"from_attributes": True}
+
+

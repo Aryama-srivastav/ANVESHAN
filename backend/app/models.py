@@ -154,6 +154,12 @@ class Document(Base):
     )
     access_grants: Mapped[list[AuthorizedAccess]] = relationship(back_populates="document")
     transfers: Mapped[list[DocumentTransfer]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    child_links: Mapped[list["EvidenceLink"]] = relationship(
+        back_populates="parent", foreign_keys="[EvidenceLink.parent_document_id]", cascade="all, delete-orphan"
+    )
+    parent_links: Mapped[list["EvidenceLink"]] = relationship(
+        back_populates="child", foreign_keys="[EvidenceLink.child_document_id]", cascade="all, delete-orphan"
+    )
 
 
 class DocumentMetadata(Base):
@@ -440,3 +446,166 @@ class ComplaintToken(Base):
     status: Mapped[str] = mapped_column(String(30), default="open", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class EvidenceLink(Base):
+    """Cross-document derivation link.
+
+    Records that ``child_document_id`` was derived from
+    ``parent_document_id`` via ``relation_type`` (e.g. a CCTV frame extracted
+    from source footage, a summary written from a witness statement). Together
+    with the immutable-version chain, these links form the provenance graph
+    that lets an investigator trace any artifact back to its source.
+    """
+
+    __tablename__ = "evidence_links"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    parent_document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    child_document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    relation_type: Mapped[str] = mapped_column(String(80), index=True)
+    match_score: Mapped[float | None] = mapped_column(nullable=True)  # AI confidence 0-1
+    match_reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # AI reasoning
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "parent_document_id",
+            "child_document_id",
+            "relation_type",
+            name="uq_evidence_links_parent_child_relation",
+        ),
+    )
+
+    parent: Mapped[Document] = relationship(
+        back_populates="child_links", foreign_keys=[parent_document_id]
+    )
+    child: Mapped[Document] = relationship(
+        back_populates="parent_links", foreign_keys=[child_document_id]
+    )
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by_user_id])
+
+
+# ---------------------------------------------------------------------------
+# Legal Knowledge Base — IPC / CrPC / Evidence Act / CPC sections
+# Used by AI to suggest applicable legal sections for a case.
+# ---------------------------------------------------------------------------
+
+
+class LegalArticle(Base):
+    """A legal code (e.g. Indian Penal Code, CrPC, Evidence Act)."""
+
+    __tablename__ = "legal_articles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(80), index=True)  # e.g. "IPC", "CrPC", "Evidence Act"
+    name: Mapped[str] = mapped_column(String(255))  # e.g. "Indian Penal Code, 1860"
+    jurisdiction: Mapped[str] = mapped_column(String(120), default="India")
+    status: Mapped[str] = mapped_column(String(30), default="active")  # active, voided, amended
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    sections: Mapped[list["LegalSection"]] = relationship(
+        back_populates="article", cascade="all, delete-orphan"
+    )
+
+
+class LegalSection(Base):
+    """An individual section within a legal article (e.g. IPC 302 - Murder)."""
+
+    __tablename__ = "legal_sections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    article_id: Mapped[str] = mapped_column(
+        ForeignKey("legal_articles.id", ondelete="CASCADE"), index=True
+    )
+    section_number: Mapped[str] = mapped_column(String(80), index=True)  # e.g. "302", "161"
+    title: Mapped[str] = mapped_column(String(255))  # e.g. "Murder"
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)  # full section text
+    keywords: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )  # comma-separated keywords for AI matching
+    jurisdiction: Mapped[str] = mapped_column(String(120), default="India")
+    status: Mapped[str] = mapped_column(String(30), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    article: Mapped["LegalArticle"] = relationship(back_populates="sections")
+    case_suggestions: Mapped[list["LegalSuggestedSection"]] = relationship(
+        back_populates="section", cascade="all, delete-orphan"
+    )
+
+
+class LegalSuggestedSection(Base):
+    """AI-suggested legal section for a case, pending officer verification."""
+
+    __tablename__ = "legal_suggested_sections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    case_id: Mapped[str] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"), index=True
+    )
+    section_id: Mapped[str] = mapped_column(
+        ForeignKey("legal_sections.id", ondelete="CASCADE"), index=True
+    )
+    match_score: Mapped[float] = mapped_column(default=0.0)  # AI confidence 0-1
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # AI reasoning
+    status: Mapped[str] = mapped_column(
+        String(30), default="suggested", index=True
+    )  # suggested, accepted, dismissed
+    verified_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    section: Mapped["LegalSection"] = relationship(back_populates="case_suggestions")
+    verifier: Mapped[User | None] = relationship(foreign_keys=[verified_by])
+
+
+# ---------------------------------------------------------------------------
+# Official Document Templates — fillable, downloadable gov-style forms
+# ---------------------------------------------------------------------------
+
+
+class DocumentTemplate(Base):
+    """An official document template (FIR, charge sheet, judge order, bail order, etc.)."""
+
+    __tablename__ = "document_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)  # FIR, charge_sheet, etc.
+    title: Mapped[str] = mapped_column(String(255))
+    category: Mapped[str] = mapped_column(String(80), default="official-document")
+    body: Mapped[str] = mapped_column(Text)  # HTML/markdown template with {{field}} placeholders
+    status: Mapped[str] = mapped_column(String(30), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    fields: Mapped[list["TemplateField"]] = relationship(
+        back_populates="template", cascade="all, delete-orphan"
+    )
+
+
+class TemplateField(Base):
+    """A fillable field within a document template."""
+
+    __tablename__ = "template_fields"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    template_id: Mapped[str] = mapped_column(
+        ForeignKey("document_templates.id", ondelete="CASCADE"), index=True
+    )
+    label: Mapped[str] = mapped_column(String(255))
+    field_type: Mapped[str] = mapped_column(String(50), default="text")  # text, textarea, select, date, file
+    required: Mapped[bool] = mapped_column(Boolean, default=True)
+    default_value: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    options: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # JSON array for select options
+    template: Mapped["DocumentTemplate"] = relationship(back_populates="fields")

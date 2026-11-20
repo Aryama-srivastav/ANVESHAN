@@ -642,6 +642,25 @@ interface LineageResult {
   versions: LineageVersion[];
 }
 
+interface LinkItem {
+  id: string;
+  parent_document_id: string;
+  child_document_id: string;
+  relation_type: string;
+  notes: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+}
+
+interface DocItem {
+  id: string;
+  title: string;
+  doc_type: string;
+  sensitivity_level: string;
+  status: string;
+  created_at: string;
+}
+
 export function DocumentDetailModal({ docId, role, onClose, onNotify }: { docId: string; role: string; onClose: () => void; onNotify: (m: string) => void }) {
   const [detail, setDetail] = useState<DocDetail | null>(null);
   const [versions, setVersions] = useState<DocVersion[]>([]);
@@ -676,8 +695,8 @@ export function DocumentDetailModal({ docId, role, onClose, onNotify }: { docId:
     }).catch((err: Error) => onNotify(err.message || "Failed to load document"))
       .finally(() => setLoading(false));
 
-    // Tags, ML suggestions and cross-version lineage are advisory: a failure
-    // here must never block the core evidence view.
+    // Tags, ML suggestions, cross-version lineage and derivation links are
+    // advisory: a failure here must never block the core evidence view.
     api.getDocumentTags(docId).then(setTags).catch(() => setTags([]));
     api.getMlSuggestions(docId).then(setMl).catch(() => setMl(null));
     api.getDocumentLineage(docId).then(setLineage).catch(() => setLineage(null));
@@ -816,6 +835,7 @@ export function DocumentDetailModal({ docId, role, onClose, onNotify }: { docId:
             onAddTag={addTag}
             onAcceptSuggestions={acceptSuggestions}
             onReclassify={reclassify}
+            onNotify={onNotify}
           />
         )}
       </motion.div>
@@ -847,11 +867,71 @@ interface DetailBodyProps {
   onAddTag: () => void;
   onAcceptSuggestions: (overrides?: { tags?: string[]; category?: string }) => void;
   onReclassify: () => void;
+  onNotify: (m: string) => void;
 }
 
 function DetailBody(p: DetailBodyProps) {
   const integrityFor = (versionId: string) => p.integrity.find((it) => it.version_id === versionId);
   const allIntact = p.integrity.length === 0 || p.integrity.every((it) => it.status === "verified" || it.status === "unverified");
+
+  // ── Derivation links (provenance) state & actions ──────────────────────
+  const [links, setLinks] = useState<LinkItem[]>([]);
+  const [siblingDocs, setSiblingDocs] = useState<DocItem[]>([]);
+  const [newLinkParentId, setNewLinkParentId] = useState("");
+  const [newLinkChildId, setNewLinkChildId] = useState("");
+  const [newLinkRelation, setNewLinkRelation] = useState("derived_from");
+  const [newLinkNotes, setNewLinkNotes] = useState("");
+  const [showLinkForm, setShowLinkForm] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
+
+  const isLinkDeletable = (_link: LinkItem) => p.canWrite;
+
+  useEffect(() => {
+    api.getDocumentLinks(p.detail.id).then(setLinks).catch(() => setLinks([]));
+    if (p.detail.case_id) {
+      api.getCaseDocuments(p.detail.case_id).then((docs: DocItem[]) => {
+        setSiblingDocs(docs.filter((x: DocItem) => x.id !== p.detail.id));
+      }).catch(() => setSiblingDocs([]));
+    }
+  }, [p.detail.id, p.detail.case_id]);
+
+  async function addLink() {
+    if (!newLinkParentId || !newLinkChildId) return;
+    setLinkBusy(true);
+    try {
+      const created = await api.createDocumentLink(p.detail.id, {
+        parent_document_id: newLinkParentId,
+        child_document_id: newLinkChildId,
+        relation_type: newLinkRelation,
+        notes: newLinkNotes.trim() || null,
+      });
+      setLinks((prev: LinkItem[]) => [...prev, created]);
+      setNewLinkParentId("");
+      setNewLinkChildId("");
+      setNewLinkRelation("derived_from");
+      setNewLinkNotes("");
+      setShowLinkForm(false);
+      api.getDocumentLinks(p.detail.id).then(setLinks).catch(() => setLinks([]));
+    } catch (err: any) {
+      p.onNotify(err.message || "Failed to add link");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
+  async function removeLink(linkId: string) {
+    if (!confirm("Remove this derivation link?")) return;
+    setLinkBusy(true);
+    try {
+      await api.deleteDocumentLink(p.detail.id, linkId);
+      setLinks((prev: LinkItem[]) => prev.filter((l) => l.id !== linkId));
+    } catch (err: any) {
+      p.onNotify(err.message || "Failed to remove link");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Metadata */}
@@ -1039,9 +1119,120 @@ function DetailBody(p: DetailBodyProps) {
         )}
       </div>
 
+      {/* Cross-document derivation links (provenance) */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[10px] font-mono text-[#6B7280] tracking-widest">
+            DERIVATION LINKS — CROSS-DOCUMENT PROVENANCE
+          </h3>
+          {p.canWrite && siblingDocs.length > 0 && (
+            <button
+              onClick={() => setShowLinkForm((s) => !s)}
+              className="h-8 px-3 border border-fileline rounded-lg text-[9px] font-mono font-bold text-ink hover:bg-ink/5 transition-all"
+            >
+              {showLinkForm ? "HIDE LINK FORM" : "LINK AS DERIVED"}
+            </button>
+          )}
+        </div>
+        {p.canWrite && siblingDocs.length > 0 && showLinkForm && (
+          <div className="bg-obsidian-900/60 rounded-xl p-4 border border-fileline space-y-3 mt-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+              <select
+                value={newLinkParentId}
+                onChange={(e) => setNewLinkParentId(e.target.value)}
+                className="h-9 px-3 bg-obsidian-900 border border-fileline rounded-lg text-xs font-mono text-ink focus:outline-none focus:border-cybergold/50"
+              >
+                <option value="">Select SOURCE (parent) document</option>
+                {siblingDocs.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.title}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={newLinkChildId}
+                onChange={(e) => setNewLinkChildId(e.target.value)}
+                className="h-9 px-3 bg-obsidian-900 border border-fileline rounded-lg text-xs font-mono text-ink focus:outline-none focus:border-cybergold/50"
+              >
+                <option value="">Select DERIVED (child) document</option>
+                {siblingDocs.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.title}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={newLinkRelation}
+                onChange={(e) => setNewLinkRelation(e.target.value)}
+                className="h-9 px-3 bg-obsidian-900 border border-fileline rounded-lg text-xs font-mono text-ink focus:outline-none focus:border-cybergold/50"
+              >
+                <option value="derived_from">Derived from</option>
+                <option value="extracted_from">Extracted from</option>
+                <option value="frame_from">Frame from</option>
+                <option value="redacted_from">Redacted from</option>
+                <option value="summarized_from">Summarized from</option>
+              </select>
+              <button
+                onClick={addLink}
+                disabled={p.busy || linkBusy || !newLinkParentId || !newLinkChildId || newLinkParentId === newLinkChildId}
+                className="h-9 px-4 bg-registry text-paper rounded-lg text-[9px] font-mono font-bold disabled:opacity-40 transition-all"
+              >
+                {linkBusy ? "LINKING..." : "ADD LINK"}
+              </button>
+            </div>
+            <input
+              value={newLinkNotes}
+              onChange={(e) => setNewLinkNotes(e.target.value)}
+              placeholder="Notes (audited)"
+              className="w-full h-9 px-3 bg-obsidian-900 border border-fileline rounded-lg text-xs font-mono text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:border-cybergold/50"
+            />
+          </div>
+        )}
+        <div className="space-y-2 mt-3">
+          {links.length === 0 ? (
+            <p className="text-xs font-mono text-[#6B7280]">
+              No cross-document derivation links yet. Link source and derived evidence to build the provenance graph.
+            </p>
+          ) : (
+            links.map((l: LinkItem) => {
+              const isParent = l.child_document_id === p.detail.id;
+              const otherId = isParent ? l.parent_document_id : l.child_document_id;
+              const other = siblingDocs.find((d) => d.id === otherId);
+              return (
+                <div key={l.id} className="bg-obsidian-900/60 rounded-xl p-3 border border-fileline flex items-center gap-3 flex-wrap">
+                  <span className={`px-2 py-0.5 rounded font-mono text-[9px] font-bold ${l.relation_type === "derived_from" ? "bg-cybergold/10 text-cybergold border border-cybergold/20" : "bg-obsidian-700 text-[#4B5563] border border-fileline"}`}>
+                    {l.relation_type.replace(/_/g, " ").toUpperCase()}
+                  </span>
+                  <span className="text-xs font-mono text-ink truncate max-w-[34%]">
+                    {isParent ? "DERIVED FROM" : "DERIVES TO"}:{" "}
+                    {other?.title || otherId.slice(0, 8) + "…"}
+                  </span>
+                  {l.notes && (
+                    <span className="text-[9px] font-mono text-[#6B7280] ml-auto truncate max-w-[30%]">
+                      {l.notes}
+                    </span>
+                  )}
+                  <span className="text-[9px] font-mono text-[#6B7280]">
+                    {formatDate(l.created_at)}
+                  </span>
+                  {isLinkDeletable(l) && (
+                    <button
+                      onClick={() => removeLink(l.id)}
+                      disabled={p.busy || linkBusy}
+                      className="h-7 px-2 border border-seal/30 text-seal rounded-lg text-[9px] font-mono font-bold hover:bg-seal/10 disabled:opacity-40 transition-all flex items-center gap-1"
+                    >
+                      <XCircle size={10} /> REMOVE
+                    </button>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
       {/* Evidence ledger trail */}
       <div>
-        <h3 className="text-[10px] font-mono text-[#6B7280] tracking-widest mb-3">EVIDENCE LEDGER TRAIL</h3>
         {p.docTrail.length === 0 ? (
           <p className="text-xs font-mono text-[#6B7280]">No ledger records for this document.</p>
         ) : (

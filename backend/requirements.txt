@@ -17,3 +17,6 @@ psycopg[binary]>=3.1,<4.0
 # Optional text extraction for PDF evidence (classification/search degrade
 # gracefully to title + metadata rules when this is unavailable).
 pypdf>=4.2,<6.0
+
+# PDF generation for official document templates (FIR, charge sheet, etc.)
+reportlab>=4.2,<5.0

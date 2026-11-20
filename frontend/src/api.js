@@ -166,6 +166,11 @@ export const api = {
   attachOriginalRecord: (docId, payload) => apiRequest(`/v1/documents/${docId}/original-record`, { method: "POST", body: JSON.stringify(payload) }),
     getDocumentAuditTrail: (docId) => apiRequest(`/v1/documents/${docId}/audit-trail`),
   getDocumentExternalRecords: (docId) => apiRequest(`/v1/documents/${docId}/external-records`),
+  getDocumentLinks: (docId) => apiRequest(`/v1/documents/${docId}/links`),
+  createDocumentLink: (docId, payload) =>
+    apiRequest(`/v1/documents/${docId}/links`, { method: "POST", body: JSON.stringify(payload) }),
+  deleteDocumentLink: (docId, linkId) =>
+    apiRequest(`/v1/documents/${docId}/links/${linkId}`, { method: "DELETE" }),
   downloadVersion: (docId, versionId, fileName) => apiDownload(`/v1/documents/${docId}/versions/${versionId}/content`, fileName || "evidence.bin"),
 
   // ── Digital signatures ─────────────────────────────────────────────

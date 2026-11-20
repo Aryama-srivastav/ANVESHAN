@@ -788,6 +788,84 @@ class DepartmentRequestService:
         return req
 
 
+class EvidenceLinkService:
+    """Provenance links between documents (parent -> derived child)."""
+
+    @staticmethod
+    def create(
+        db: Session,
+        payload: schemas.EvidenceLinkCreate,
+        actor_id: str,
+    ) -> models.EvidenceLink:
+        parent = DocumentService.get(db, payload.parent_document_id)
+        if parent is None:
+            raise LookupError("Parent document not found")
+        child = DocumentService.get(db, payload.child_document_id)
+        if child is None:
+            raise LookupError("Child document not found")
+        if parent.case_id != child.case_id:
+            raise ValueError("Both documents must belong to the same case")
+        if parent.id == child.id:
+            raise ValueError("A document cannot link to itself")
+
+        # Derivation asserts provenance of the child; the caller needs write on
+        # the child and read on the parent they cite as a source.
+        try:
+            AccessService.require_document_access(db, actor_id, child, "write")
+            AccessService.require_document_access(db, actor_id, parent, "read")
+        except PermissionError as exc:
+            raise PermissionError(str(exc)) from exc
+
+        link = models.EvidenceLink(
+            parent_document_id=parent.id,
+            child_document_id=child.id,
+            relation_type=payload.relation_type,
+            notes=payload.notes,
+            created_by_user_id=actor_id,
+        )
+        db.add(link)
+        db.commit()
+        db.refresh(link)
+        return link
+
+    @staticmethod
+    def list_for_document(
+        db: Session, document_id: str, actor_id: str
+    ) -> list[models.EvidenceLink]:
+        document = DocumentService.get(db, document_id)
+        if document is None:
+            raise LookupError("Document not found")
+        try:
+            AccessService.require_document_access(db, actor_id, document, "read")
+        except PermissionError as exc:
+            raise PermissionError(str(exc)) from exc
+        return list(
+            db.scalars(
+                select(models.EvidenceLink).where(
+                    or_(
+                        models.EvidenceLink.parent_document_id == document_id,
+                        models.EvidenceLink.child_document_id == document_id,
+                    )
+                )
+            )
+        )
+
+    @staticmethod
+    def get(db: Session, link_id: str) -> models.EvidenceLink | None:
+        return db.get(models.EvidenceLink, link_id)
+
+    @staticmethod
+    def delete(db: Session, link_id: str, actor_id: str) -> None:
+        link = db.get(models.EvidenceLink, link_id)
+        if link is None:
+            raise LookupError("Link not found")
+        is_admin = AccessService._is_admin(db, actor_id)
+        if not is_admin and link.created_by_user_id != actor_id:
+            raise PermissionError("Only the link creator or an administrator may delete it")
+        db.delete(link)
+        db.commit()
+
+
 # Departments that touch a case across its whole lifecycle, with the role
 # matrix the user specified: who operates the dataset and who may view it.
 # ``user`` is the investigator role, ``viewer`` the read-only citizen role.

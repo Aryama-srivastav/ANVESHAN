@@ -35,6 +35,8 @@ from .schemas import (
     OriginalRecordCreate,
     TagCreate,
     TagOut,
+    EvidenceLinkCreate,
+    EvidenceLinkOut,
     SignatureOut,
     SignatureVerifyOut,
     UserCreate,
@@ -48,6 +50,7 @@ from .services import (
     CaseService,
     DocumentService,
     EvidenceFileTypeError,
+    EvidenceLinkService,
     RecordService,
     UserService,
     validate_external_source,
@@ -684,3 +687,64 @@ def create_external_reference(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to save external reference") from exc
+
+
+@router.get("/documents/{document_id}/links", response_model=list[EvidenceLinkOut])
+def list_document_links(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EvidenceLinkOut]:
+    """Provenance links for a document — both directions (parent and child)."""
+    try:
+        links = EvidenceLinkService.list_for_document(db, document_id, current_user.id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return links
+
+
+@router.post(
+    "/documents/{document_id}/links",
+    response_model=EvidenceLinkOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_document_link(
+    document_id: str,
+    payload: EvidenceLinkCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EvidenceLinkOut:
+    """Declare that another document is derived from this one (or vice versa).
+
+    The caller needs write access to the child document and read access to the
+    cited parent; both documents must belong to the same case.
+    """
+    try:
+        link = EvidenceLinkService.create(db, payload, current_user.id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Link already exists") from exc
+    return link
+
+
+@router.delete("/documents/{document_id}/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document_link(
+    document_id: str,
+    link_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Remove a derivation link (creator or admin only)."""
+    link = EvidenceLinkService.get(db, link_id)
+    if link is None:
+        raise HTTPException(status_code=404, detail="Link not found")
+    if link.parent_document_id != document_id and link.child_document_id != document_id:
+        raise HTTPException(status_code=404, detail="Link not found on this document")
+    try:
+        EvidenceLinkService.delete(db, link_id, current_user.id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc

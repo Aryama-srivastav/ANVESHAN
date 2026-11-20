@@ -18,10 +18,12 @@ from __future__ import annotations
 
 
 import json
+import io
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -972,3 +974,537 @@ def update_complaint_status(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+# ---------------------------------------------------------------------------
+# Legal Knowledge Base — IPC / CrPC / Evidence Act sections
+# ---------------------------------------------------------------------------
+
+
+@router.get("/legal/articles", response_model=list[schemas.LegalArticleOut])
+def list_legal_articles(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> list[schemas.LegalArticleOut]:
+    """List all legal articles (IPC, CrPC, Evidence Act, etc.)."""
+    stmt = select(models.LegalArticle).order_by(models.LegalArticle.code, models.LegalArticle.name)
+    return list(db.scalars(stmt))
+
+
+@router.get("/legal/sections", response_model=list[schemas.LegalSectionListOut])
+def list_legal_sections(
+    q: Optional[str] = Query(None, description="Search in section number, title, or keywords"),
+    article: Optional[str] = Query(None, description="Filter by article code (e.g. IPC)"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> list[schemas.LegalSectionListOut]:
+    """List legal sections with optional search and filters."""
+    stmt = (
+        select(
+            models.LegalSection.id,
+            models.LegalArticle.code.label("article_code"),
+            models.LegalArticle.name.label("article_name"),
+            models.LegalSection.section_number,
+            models.LegalSection.title,
+            models.LegalSection.keywords,
+            models.LegalSection.status,
+        )
+        .join(models.LegalArticle, models.LegalSection.article_id == models.LegalArticle.id)
+    )
+    if article:
+        stmt = stmt.where(models.LegalArticle.code == article)
+    if status:
+        stmt = stmt.where(models.LegalSection.status == status)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            models.LegalSection.section_number.ilike(like)
+            | models.LegalSection.title.ilike(like)
+            | models.LegalSection.keywords.ilike(like)
+        )
+    stmt = stmt.order_by(models.LegalArticle.code, models.LegalSection.section_number)
+    return list(db.execute(stmt).mappings().all())
+
+
+@router.post(
+    "/cases/{case_id}/legal-suggestions",
+    response_model=schemas.LegalSuggestedSectionOut,
+    status_code=201,
+)
+def create_legal_suggestion(
+    case_id: str,
+    payload: schemas.LegalSuggestedSectionCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.LegalSuggestedSectionOut:
+    """AI suggests a legal section for a case (officer must verify on facts)."""
+    case = db.get(models.Case, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    section = db.get(models.LegalSection, payload.section_id)
+    if section is None:
+        raise HTTPException(status_code=404, detail="Legal section not found")
+    try:
+        AccessService.require_case_access(db, current_user.id, case_id, "write")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    suggestion = models.LegalSuggestedSection(
+        case_id=case_id,
+        section_id=payload.section_id,
+        match_score=payload.match_score,
+        reason=payload.reason,
+        status=payload.status or "suggested",
+    )
+    db.add(suggestion)
+    db.commit()
+    db.refresh(suggestion)
+    return schemas.LegalSuggestedSectionOut(
+        id=suggestion.id,
+        case_id=suggestion.case_id,
+        section_id=suggestion.section_id,
+        section_number=section.section_number,
+        section_title=section.title,
+        article_code=section.article.code,
+        match_score=suggestion.match_score,
+        reason=suggestion.reason,
+        status=suggestion.status,
+        verified_by=suggestion.verified_by,
+        verified_at=suggestion.verified_at,
+        created_at=suggestion.created_at,
+    )
+
+
+@router.get("/cases/{case_id}/legal-suggestions", response_model=list[schemas.LegalSuggestedSectionOut])
+def list_legal_suggestions(
+    case_id: str,
+    status: Optional[str] = Query(None, description="Filter by suggestion status"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> list[schemas.LegalSuggestedSectionOut]:
+    """List legal suggestions for a case."""
+    case = db.get(models.Case, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    try:
+        AccessService.require_case_access(db, current_user.id, case_id, "read")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    stmt = (
+        select(models.LegalSuggestedSection, models.LegalSection)
+        .join(models.LegalSection, models.LegalSuggestedSection.section_id == models.LegalSection.id)
+        .where(models.LegalSuggestedSection.case_id == case_id)
+    )
+    if status:
+        stmt = stmt.where(models.LegalSuggestedSection.status == status)
+    stmt = stmt.order_by(models.LegalSuggestedSection.match_score.desc(), models.LegalSuggestedSection.created_at.desc())
+    rows = list(db.execute(stmt).all())
+    out = []
+    for suggestion, section in rows:
+        out.append(
+            schemas.LegalSuggestedSectionOut(
+                id=suggestion.id,
+                case_id=suggestion.case_id,
+                section_id=suggestion.section_id,
+                section_number=section.section_number,
+                section_title=section.title,
+                article_code=section.article.code,
+                match_score=suggestion.match_score,
+                reason=suggestion.reason,
+                status=suggestion.status,
+                verified_by=suggestion.verified_by,
+                verified_at=suggestion.verified_at,
+                created_at=suggestion.created_at,
+            )
+        )
+    return out
+
+
+@router.post(
+    "/cases/{case_id}/legal-suggestions/{suggestion_id}/accept",
+    response_model=schemas.LegalSuggestedSectionOut,
+)
+def accept_legal_suggestion(
+    case_id: str,
+    suggestion_id: str,
+    payload: schemas.AcceptRejectRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.LegalSuggestedSectionOut:
+    """Officer verifies and accepts an AI-suggested legal section."""
+    suggestion = db.get(models.LegalSuggestedSection, suggestion_id)
+    if suggestion is None or suggestion.case_id != case_id:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    section = db.get(models.LegalSection, suggestion.section_id)
+    if section is None:
+        raise HTTPException(status_code=404, detail="Legal section not found")
+    try:
+        AccessService.require_case_access(db, current_user.id, case_id, "write")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    suggestion.status = "accepted"
+    suggestion.verified_by = current_user.id
+    suggestion.verified_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(suggestion)
+    return schemas.LegalSuggestedSectionOut(
+        id=suggestion.id,
+        case_id=suggestion.case_id,
+        section_id=suggestion.section_id,
+        section_number=section.section_number,
+        section_title=section.title,
+        article_code=section.article.code,
+        match_score=suggestion.match_score,
+        reason=suggestion.reason,
+        status=suggestion.status,
+        verified_by=suggestion.verified_by,
+        verified_at=suggestion.verified_at,
+        created_at=suggestion.created_at,
+    )
+
+
+@router.post(
+    "/cases/{case_id}/legal-suggestions/{suggestion_id}/dismiss",
+    response_model=schemas.LegalSuggestedSectionOut,
+)
+def dismiss_legal_suggestion(
+    case_id: str,
+    suggestion_id: str,
+    payload: schemas.AcceptRejectRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.LegalSuggestedSectionOut:
+    """Officer dismisses an AI-suggested legal section."""
+    suggestion = db.get(models.LegalSuggestedSection, suggestion_id)
+    if suggestion is None or suggestion.case_id != case_id:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    section = db.get(models.LegalSection, suggestion.section_id)
+    if section is None:
+        raise HTTPException(status_code=404, detail="Legal section not found")
+    try:
+        AccessService.require_case_access(db, current_user.id, case_id, "write")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    suggestion.status = "dismissed"
+    suggestion.verified_by = current_user.id
+    suggestion.verified_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(suggestion)
+    return schemas.LegalSuggestedSectionOut(
+        id=suggestion.id,
+        case_id=suggestion.case_id,
+        section_id=suggestion.section_id,
+        section_number=section.section_number,
+        section_title=section.title,
+        article_code=section.article.code,
+        match_score=suggestion.match_score,
+        reason=suggestion.reason,
+        status=suggestion.status,
+        verified_by=suggestion.verified_by,
+        verified_at=suggestion.verified_at,
+        created_at=suggestion.created_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Official Document Templates — fillable, downloadable gov-style forms
+# ---------------------------------------------------------------------------
+
+
+def _generate_template_pdf(template: models.DocumentTemplate, fields: dict[str, str]) -> bytes:
+    """Generate an Indian-government-style PDF from a filled template."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
+        title=template.title,
+        author="ANVESHAN Evidence Vault",
+    )
+
+    styles = {
+        "header": ParagraphStyle(
+            "header",
+            fontName="Helvetica-Bold",
+            fontSize=14,
+            alignment=1,
+            textColor=colors.HexColor("#1a1a2e"),
+            spaceAfter=6,
+        ),
+        "subheader": ParagraphStyle(
+            "subheader",
+            fontName="Helvetica",
+            fontSize=10,
+            alignment=1,
+            textColor=colors.HexColor("#4a4a4a"),
+            spaceAfter=2,
+        ),
+        "label": ParagraphStyle(
+            "label",
+            fontName="Helvetica-Bold",
+            fontSize=9.5,
+            textColor=colors.HexColor("#1a1a2e"),
+            spaceBefore=8,
+            spaceAfter=2,
+        ),
+        "value": ParagraphStyle(
+            "value",
+            fontName="Helvetica",
+            fontSize=10,
+            textColor=colors.HexColor("#000000"),
+            spaceAfter=4,
+        ),
+        "footer": ParagraphStyle(
+            "footer",
+            fontName="Helvetica-Oblique",
+            fontSize=8,
+            textColor=colors.HexColor("#666666"),
+            alignment=1,
+            spaceBefore=12,
+        ),
+    }
+
+    story = []
+
+    story.append(Paragraph("GOVERNMENT OF INDIA", styles["header"]))
+    story.append(Paragraph("ANVESHAN — Evidence Vault & Case Management System", styles["subheader"]))
+    story.append(Paragraph(template.title.upper(), styles["subheader"]))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#1a1a2e"), spaceAfter=10))
+
+    template_fields = {f.id: f for f in template.fields}
+    for field in template.fields:
+        value = fields.get(field.id, field.default_value or "")
+        story.append(Paragraph(field.label, styles["label"]))
+        story.append(Paragraph(value or "—", styles["value"]))
+
+    story.append(Spacer(1, 12))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#1a1a2e"), spaceBefore=6, spaceAfter=6))
+    story.append(Paragraph(
+        "Generated by ANVESHAN Evidence Vault — Provenance-secured document. "
+        "This is a system-generated record; verify all entries before submission.",
+        styles["footer"],
+    ))
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
+@router.get("/templates", response_model=list[schemas.DocumentTemplateOut])
+def list_document_templates(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> list[schemas.DocumentTemplateOut]:
+    """List all available official document templates."""
+    stmt = (
+        select(models.DocumentTemplate)
+        .where(models.DocumentTemplate.status == "active")
+        .order_by(models.DocumentTemplate.title)
+    )
+    templates = list(db.scalars(stmt))
+    return [
+        schemas.DocumentTemplateOut(
+            id=t.id,
+            slug=t.slug,
+            title=t.title,
+            category=t.category,
+            status=t.status,
+            fields=[
+                schemas.TemplateFieldOut(
+                    id=f.id,
+                    template_id=f.template_id,
+                    label=f.label,
+                    field_type=f.field_type,
+                    required=f.required,
+                    default_value=f.default_value,
+                    options=f.options,
+                )
+                for f in t.fields
+            ],
+        )
+        for t in templates
+    ]
+
+
+@router.get("/templates/{slug}", response_model=schemas.DocumentTemplateOut)
+def get_document_template(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.DocumentTemplateOut:
+    """Get a specific template with its fillable fields."""
+    template = db.scalar(
+        select(models.DocumentTemplate).where(models.DocumentTemplate.slug == slug)
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return schemas.DocumentTemplateOut(
+        id=template.id,
+        slug=template.slug,
+        title=template.title,
+        category=template.category,
+        status=template.status,
+        fields=[
+            schemas.TemplateFieldOut(
+                id=f.id,
+                template_id=f.template_id,
+                label=f.label,
+                field_type=f.field_type,
+                required=f.required,
+                default_value=f.default_value,
+                options=f.options,
+            )
+            for f in template.fields
+        ],
+    )
+
+
+@router.post(
+    "/cases/{case_id}/templates/{slug}/fill",
+    response_model=schemas.TemplateFillOut,
+)
+def fill_document_template(
+    case_id: str,
+    slug: str,
+    payload: schemas.TemplateFillRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> schemas.TemplateFillOut:
+    """Fill a template with case data, generate PDF, and attach as a case document."""
+    case = db.get(models.Case, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    template = db.scalar(
+        select(models.DocumentTemplate).where(models.DocumentTemplate.slug == slug)
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    try:
+        AccessService.require_document_access(db, current_user.id, case, "write")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    pdf_bytes = _generate_template_pdf(template, payload.fields)
+
+    document = models.Document(
+        case_id=case_id,
+        title=f"{template.title} — {case.case_number or case_id[:8]}",
+        doc_type="official_template",
+        sensitivity_level="restricted",
+    )
+    db.add(document)
+    db.flush()
+
+    from .storage import get_storage
+    storage = get_storage()
+    key = f"cases/{case_id}/documents/{document.id}/versions/{__import__('uuid').uuid4()}"
+    reader = __import__('app.services', fromlist=['_HashingReader']).services._HashingReader(
+        io.BytesIO(pdf_bytes), len(pdf_bytes)
+    )
+    storage_uri = storage.put(key, reader, "application/pdf")
+
+    version = models.DocumentVersion(
+        document_id=document.id,
+        version_number=1,
+        storage_uri=storage_uri,
+        content_hash=reader.hasher.hexdigest(),
+        created_by_user_id=current_user.id,
+        notes=f"Filled from template '{template.title}'",
+    )
+    db.add(version)
+    db.add(
+        models.OriginalDocumentRecord(
+            document_id=document.id,
+            source_system="anveshan-template",
+            source_reference=storage_uri,
+            immutable_hash=version.content_hash,
+        )
+    )
+
+    AuditLedger.record(
+        db,
+        event_type="document_template_filled",
+        actor_user_id=current_user.id,
+        case_id=case_id,
+        document_id=document.id,
+        payload={
+            "template_slug": slug,
+            "template_title": template.title,
+            "fields": payload.fields,
+            "storage_uri": storage_uri,
+        },
+    )
+    db.commit()
+    db.refresh(document)
+
+    return schemas.TemplateFillOut(
+        document_id=document.id,
+        case_id=case_id,
+        title=document.title,
+        download_url=f"/v1/documents/{document.id}/versions/{version.id}/content",
+        fields=payload.fields,
+    )
+
+
+@router.get("/cases/{case_id}/templates/{slug}/download")
+def download_filled_template(
+    case_id: str,
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Download the most recently filled version of a template for a case."""
+    case = db.get(models.Case, case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    template = db.scalar(
+        select(models.DocumentTemplate).where(models.DocumentTemplate.slug == slug)
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    try:
+        AccessService.require_document_access(db, current_user.id, case, "read")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    document = db.scalar(
+        select(models.Document)
+        .where(models.Document.case_id == case_id)
+        .where(models.Document.doc_type == "official_template")
+        .where(models.Document.title.ilike(f"%{template.title}%"))
+        .order_by(models.Document.created_at.desc())
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="No filled template found for this case")
+
+    version = db.scalar(
+        select(models.DocumentVersion)
+        .where(models.DocumentVersion.document_id == document.id)
+        .order_by(models.DocumentVersion.version_number.desc())
+    )
+    if version is None:
+        raise HTTPException(status_code=404, detail="No version found")
+
+    from .storage import get_storage, StorageError
+    storage = get_storage()
+    try:
+        file_obj = storage.open(version.storage_uri)
+    except (FileNotFoundError, StorageError) as exc:
+        raise HTTPException(status_code=404, detail="Stored file not found") from exc
+
+    return StreamingResponse(
+        file_obj,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{document.title}.pdf"'},
+    )
